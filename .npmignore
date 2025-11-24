@@ -1,0 +1,44 @@
+# Source files (publish only dist/)
+src/
+scripts/
+tsconfig.json
+
+# Development files
+.github/
+.vscode/
+.gitignore
+*.code-workspace
+
+# Tests
+*.test.ts
+*.spec.ts
+coverage/
+
+# Build artifacts
+node_modules/
+*.tsbuildinfo
+.cache/
+
+# Documentation assets (keep only essential docs)
+docs/
+
+# Environment & local configs
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+
+# Logs & captures
+logs/
+*.log
+screenshots/
+captures/
+
+# Docker development
+Dockerfile
+.dockerignore
