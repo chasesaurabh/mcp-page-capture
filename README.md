@@ -37,8 +37,12 @@ git clone https://github.com/chasesaurabh/mcp-page-capture.git
 npm install
 ```
 
-### From npm (coming soon)
+### From npm
 ```powershell
+# Run without installing globally
+npx mcp-page-capture
+
+# Or add it to your toolchain
 npm install -g mcp-page-capture
 mcp-page-capture
 ```
@@ -69,10 +73,21 @@ Otherwise you can keep using the standard npm scripts locally.
   "mcpServers": {
     "page-capture": {
       "command": "node",
-      "args": ["dist/server.js"]
+      "args": ["dist/cli.js"]
     }
   }
 }
+```
+
+## Programmatic usage
+
+If you want to embed the server inside another Node.js process, import the helpers exposed by the package:
+
+```ts
+import { startMcpPageCaptureServer } from "mcp-page-capture";
+
+await startMcpPageCaptureServer();
+// Optionally pass a custom Transport implementation if you don't want stdio.
 ```
 
 ## Usage

@@ -4,9 +4,24 @@
   "description": "mcp-page-capture is a Node.js + TypeScript MCP server that captures webpage screenshots via Puppeteer.",
   "type": "module",
   "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "mcp-page-capture": "dist/cli.js"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/chasesaurabh/mcp-page-capture.git"
+    "url": "git+https://github.com/chasesaurabh/mcp-page-capture.git"
   },
   "bugs": {
     "url": "https://github.com/chasesaurabh/mcp-page-capture/issues"
@@ -20,9 +35,10 @@
   ],
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "start": "node dist/server.js",
-    "dev": "tsx watch src/server.ts",
-    "lint": "tsc --noEmit --pretty"
+    "start": "node dist/cli.js",
+    "dev": "tsx watch src/cli.ts",
+    "lint": "tsc --noEmit --pretty",
+    "prepublishOnly": "npm run build"
   },
   "engines": {
     "node": ">=20.11"
@@ -36,6 +52,9 @@
   ],
   "author": "Saurabh Chase",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.2.0",
     "puppeteer": "^24.15.0",

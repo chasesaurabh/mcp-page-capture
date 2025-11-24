@@ -3,7 +3,9 @@
 All notable changes to this project will be documented in this file following [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
-- Placeholder for upcoming changes.
+- Added a distributable CLI (`mcp-page-capture`) plus programmatic helpers for custom transports.
+- Generated type declarations and conditional exports for consumers importing the server.
+- Added publish-time build automation and documentation for the npm package.
 
 ## [1.0.0] - 2025-11-24
 ### Added

@@ -1,33 +1,53 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
-import { createLogger } from "./logger.js";
+import { createLogger, type LogLevel, type Logger } from "./logger.js";
 import { registerCaptureScreenshotTool } from "./tools/captureScreenshot.js";
 
-const logger = createLogger(process.env.LOG_LEVEL as "debug" | "info" | "warn" | "error" || "info");
-
-const server = new McpServer(
-  {
-    name: "pagecapture-mcp",
-    version: process.env.npm_package_version || "1.0.0",
-  },
-  {
-    instructions: "Capture high-fidelity webpage screenshots with optional full-page rendering.",
-  },
-);
-
-registerCaptureScreenshotTool(server, logger);
-
-async function main() {
-  logger.info("mcp-page-capture starting");
-
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-
-  logger.info("mcp-page-capture ready to accept requests");
+export interface CreateServerOptions {
+  logger?: Logger;
 }
 
-main().catch((error) => {
-  logger.error("Fatal error", { error: (error as Error).message });
-  process.exitCode = 1;
-});
+export interface CreateServerResult {
+  server: McpServer;
+  logger: Logger;
+}
+
+export function createPageCaptureServer(options: CreateServerOptions = {}): CreateServerResult {
+  const resolvedLevel = (process.env.LOG_LEVEL as LogLevel) || "info";
+  const logger = options.logger ?? createLogger(resolvedLevel);
+
+  const server = new McpServer(
+    {
+      name: "pagecapture-mcp",
+      version: process.env.npm_package_version || "1.0.0",
+    },
+    {
+      instructions: "Capture high-fidelity webpage screenshots with optional full-page rendering.",
+    },
+  );
+
+  registerCaptureScreenshotTool(server, logger);
+
+  return { server, logger };
+}
+
+export interface StartServerOptions extends CreateServerOptions {
+  transport?: Transport;
+}
+
+export interface StartServerResult extends CreateServerResult {
+  transport: Transport;
+}
+
+export async function startMcpPageCaptureServer(options: StartServerOptions = {}): Promise<StartServerResult> {
+  const transport = options.transport ?? new StdioServerTransport();
+  const { server, logger } = createPageCaptureServer({ logger: options.logger });
+
+  logger.info("mcp-page-capture starting");
+  await server.connect(transport);
+  logger.info("mcp-page-capture ready to accept requests");
+
+  return { server, transport, logger };
+}

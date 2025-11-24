@@ -11,7 +11,7 @@ async function captureScreenshot(url: string, fullPage = false) {
 
   const transport = new StdioClientTransport({
     command: "node",
-    args: ["dist/server.js"],
+    args: ["dist/cli.js"],
     stderr: "pipe",
   });
 
