@@ -4,14 +4,41 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { Logger } from "../logger.js";
-import type {
-  CaptureScreenshotInput,
-  CaptureScreenshotResult,
-  ScreenshotMetadata,
-} from "../types/screenshot.js";
+import type { CaptureScreenshotInput, CaptureScreenshotResult, ScreenshotMetadata } from "../types/screenshot.js";
+import { normalizeHeadersInput, toPuppeteerCookies } from "../utils/requestOptions.js";
 
 const CAPTURE_TIMEOUT_MS = 45_000;
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 } as const;
+
+const headersSchema = z
+  .record(z.string().min(1, "Header names cannot be empty."), z.string().min(1, "Header values cannot be empty."))
+  .optional();
+
+const cookieSchema = z.object({
+  name: z.string({ required_error: "Cookie name is required." }).min(1, "Cookie name cannot be empty."),
+  value: z.string({ required_error: "Cookie value is required." }),
+  url: z
+    .string()
+    .optional()
+    .transform((value, ctx) => {
+      if (!value) return value;
+      try {
+        return normalizeUrl(value);
+      } catch {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Invalid cookie URL.",
+        });
+        return z.NEVER;
+      }
+    }),
+  domain: z.string().optional(),
+  path: z.string().optional(),
+  secure: z.boolean().optional(),
+  httpOnly: z.boolean().optional(),
+  sameSite: z.enum(["Strict", "Lax", "None"]).optional(),
+  expires: z.number().optional(),
+});
 
 const captureScreenshotSchema = z.object({
   url: z
@@ -29,6 +56,8 @@ const captureScreenshotSchema = z.object({
       }
     }),
   fullPage: z.boolean().optional().default(false),
+  headers: headersSchema,
+  cookies: z.array(cookieSchema).optional(),
 });
 
 export function registerCaptureScreenshotTool(server: McpServer, logger: Logger) {
@@ -92,6 +121,16 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
     await page.setViewport(DEFAULT_VIEWPORT);
     page.setDefaultNavigationTimeout(CAPTURE_TIMEOUT_MS);
 
+    const normalizedHeaders = normalizeHeadersInput(args.headers);
+    if (normalizedHeaders) {
+      await page.setExtraHTTPHeaders(normalizedHeaders);
+    }
+
+    const cookieParams = toPuppeteerCookies(args.cookies, args.url);
+    if (cookieParams.length > 0) {
+      await page.setCookie(...cookieParams);
+    }
+
     const response = await page.goto(args.url, {
       waitUntil: "networkidle0",
       timeout: CAPTURE_TIMEOUT_MS,
@@ -138,6 +177,7 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
     await browser.close();
   }
 }
+
 
 function normalizeUrl(input: string): string {
   try {

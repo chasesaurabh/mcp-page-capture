@@ -118,6 +118,26 @@ await startMcpPageCaptureServer();
 }
 ```
 
+```json
+{
+  "server": "page-capture",
+  "tool": "captureScreenshot",
+  "params": {
+    "url": "https://example.com/dashboard",
+    "headers": {
+      "authorization": "Bearer dev-token"
+    },
+    "cookies": [
+      {
+        "name": "session",
+        "value": "abc123",
+        "path": "/secure"
+      }
+    ]
+  }
+}
+```
+
 ### Example response
 ```json
 {
@@ -133,6 +153,8 @@ await startMcpPageCaptureServer();
 ## Supported options
 - `url` (string, required): Fully-qualified URL to capture.
 - `fullPage` (boolean, optional, default `false`): Capture the entire scrollable page instead of the current viewport.
+- `headers` (object, optional): Key/value map of HTTP headers to send with the initial page navigation.
+- `cookies` (array, optional): List of cookies to set before navigation. Each cookie supports `name`, `value`, and optional `url`, `domain`, `path`, `secure`, `httpOnly`, `sameSite`, and `expires` (Unix timestamp, seconds).
 
 ## Known limitations
 - Dynamic pages requiring authentication or user gestures are not yet automated.
