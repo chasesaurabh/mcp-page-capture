@@ -21,7 +21,7 @@ export function createPageCaptureServer(options: CreateServerOptions = {}): Crea
 
   const server = new McpServer(
     {
-      name: "pagecapture-mcp",
+      name: "mcp-page-capture",
       version: process.env.npm_package_version || "1.0.0",
     },
     {
