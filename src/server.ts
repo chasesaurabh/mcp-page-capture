@@ -4,6 +4,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 import { createLogger, type LogLevel, type Logger } from "./logger.js";
 import { registerCaptureScreenshotTool } from "./tools/captureScreenshot.js";
+import { registerExtractDomTool } from "./tools/extractDom.js";
 
 export interface CreateServerOptions {
   logger?: Logger;
@@ -29,6 +30,7 @@ export function createPageCaptureServer(options: CreateServerOptions = {}): Crea
   );
 
   registerCaptureScreenshotTool(server, logger);
+  registerExtractDomTool(server, logger);
 
   return { server, logger };
 }

@@ -13,15 +13,16 @@ mcp-page-capture is a Model Context Protocol (MCP) server that orchestrates head
 ## Features
 - 📸 High-fidelity screenshots powered by Puppeteer and headless Chromium.
 - ⚙️ Declarative MCP tool schema for predictable integrations and strong validation.
+- 🔍 Structured DOM extraction with optional CSS selectors for AI-friendly consumption.
 - 🛡️ Structured logging plus defensive error handling for operational visibility.
 - 🔌 Launch via `npm start`, `npm run dev`, or as a long-lived MCP sidecar.
 - 🧩 Configurable options for target URL selection and full-page captures.
 
 ## How It Works
-1. The MCP transport boots a Node.js server and registers the `captureScreenshot` tool.
-2. Incoming tool invocations are validated against the `screenshot` type definitions.
-3. Puppeteer starts (or reuses) a Chromium instance, navigates to the requested URL, and applies viewport/full-page instructions.
-4. The rendered screenshot is persisted locally (or to another destination in future releases) and metadata is returned to the caller.
+1. The MCP transport boots a Node.js server and registers the `captureScreenshot` and `extractDom` tools.
+2. Incoming tool invocations are validated against the relevant type definitions.
+3. Puppeteer starts (or reuses) a Chromium instance, navigates to the requested URL, and either captures a screenshot or serializes the DOM according to the tool parameters.
+4. The server returns structured content (images, text, DOM trees, metadata) to the caller or downstream workflow.
 
 ## Requirements
 - Node.js ≥ 18.x
@@ -138,6 +139,17 @@ await startMcpPageCaptureServer();
 }
 ```
 
+```json
+{
+  "server": "page-capture",
+  "tool": "extractDom",
+  "params": {
+    "url": "https://docs.modelcontextprotocol.io",
+    "selector": "main article"
+  }
+}
+```
+
 ### Example response
 ```json
 {
@@ -151,10 +163,18 @@ await startMcpPageCaptureServer();
 ```
 
 ## Supported options
+
+### `captureScreenshot`
 - `url` (string, required): Fully-qualified URL to capture.
 - `fullPage` (boolean, optional, default `false`): Capture the entire scrollable page instead of the current viewport.
 - `headers` (object, optional): Key/value map of HTTP headers to send with the initial page navigation.
 - `cookies` (array, optional): List of cookies to set before navigation. Each cookie supports `name`, `value`, and optional `url`, `domain`, `path`, `secure`, `httpOnly`, `sameSite`, and `expires` (Unix timestamp, seconds).
+
+### `extractDom`
+- `url` (string, required): Fully-qualified URL to inspect.
+- `selector` (string, optional): CSS selector to scope extraction to a specific element. Defaults to the entire document.
+- `headers` (object, optional): Key/value map of HTTP headers sent before navigation.
+- `cookies` (array, optional): Same cookie structure as `captureScreenshot`, applied before navigation.
 
 ## Known limitations
 - Dynamic pages requiring authentication or user gestures are not yet automated.

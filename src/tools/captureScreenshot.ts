@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Logger } from "../logger.js";
 import type { CaptureScreenshotInput, CaptureScreenshotResult, ScreenshotMetadata } from "../types/screenshot.js";
 import { normalizeHeadersInput, toPuppeteerCookies } from "../utils/requestOptions.js";
+import { normalizeUrl } from "../utils/url.js";
 
 const CAPTURE_TIMEOUT_MS = 45_000;
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 } as const;
@@ -175,17 +176,6 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
     throw error;
   } finally {
     await browser.close();
-  }
-}
-
-
-function normalizeUrl(input: string): string {
-  try {
-    const parsed = new URL(input);
-    return parsed.toString();
-  } catch {
-    const parsed = new URL(`https://${input}`);
-    return parsed.toString();
   }
 }
 
