@@ -69,11 +69,12 @@ export function registerCaptureScreenshotTool(server: McpServer, logger: Logger)
       description: "Capture a PNG screenshot for the provided URL (full page optional).",
       inputSchema: captureScreenshotSchema,
     },
-    async ({ url, fullPage }) => {
+    async (input) => {
+      const { url, fullPage } = input;
       logger.info("captureScreenshot:requested", { url, fullPage });
 
       try {
-        const result = await runScreenshot({ url, fullPage }, logger);
+        const result = await runScreenshot(input, logger);
 
         logger.info("captureScreenshot:completed", {
           url,
