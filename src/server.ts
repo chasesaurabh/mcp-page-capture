@@ -5,6 +5,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { createLogger, type LogLevel, type Logger } from "./logger.js";
 import { registerCaptureScreenshotTool } from "./tools/captureScreenshot.js";
 import { registerExtractDomTool } from "./tools/extractDom.js";
+import packageJson from "../package.json" with { type: "json" };
 
 export interface CreateServerOptions {
   logger?: Logger;
@@ -22,7 +23,7 @@ export function createPageCaptureServer(options: CreateServerOptions = {}): Crea
   const server = new McpServer(
     {
       name: "mcp-page-capture",
-      version: process.env.npm_package_version || "1.0.0",
+      version: packageJson.version,
     },
     {
       instructions: "Capture high-fidelity webpage screenshots with optional full-page rendering.",
