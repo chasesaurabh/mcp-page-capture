@@ -188,6 +188,13 @@ await startMcpPageCaptureServer();
 - Telemetry hooks for centralized observability.
 - Docker image publishing and npm package distribution.
 
+## Automated Releases
+- Release automation is powered by [semantic-release](https://semantic-release.gitbook.io/semantic-release/) and a GitHub Actions workflow that runs on every push to `main`.
+- Commits must follow the Conventional Commits spec (`feat:`, `fix:`, `chore:`…) so the analyzer can infer the next semantic version and generate release notes.
+- The workflow runs lint, tests, and build before invoking `npm run release`; publish and GitHub Releases happen only if the pipeline is green.
+- Add an `NPM_TOKEN` secret in the repository settings with _publish_ permissions so the workflow can push packages to npm; `GITHUB_TOKEN` is provided automatically.
+- Release artifacts include updated `CHANGELOG.md`, the version bump in `package.json`, and a GitHub Release that mirrors the changelog entry.
+
 ## How to contribute
 Read `CONTRIBUTING.md`, open an issue describing the change, and submit a PR that includes `npm run build` output plus updated docs/tests.
 
