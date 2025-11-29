@@ -191,6 +191,7 @@ await startMcpPageCaptureServer();
 ## Automated Releases
 - Release automation is powered by [semantic-release](https://semantic-release.gitbook.io/semantic-release/) and a GitHub Actions workflow that runs on every push to `main`.
 - Commits must follow the Conventional Commits spec (`feat:`, `fix:`, `chore:`…) so the analyzer can infer the next semantic version and generate release notes.
+- Use `feat:` for feature work (bumps minor) and `fix:` for patches (bumps patch); append `!` or add a `BREAKING CHANGE:` footer to force a major release when needed.
 - The workflow runs lint, tests, and build before invoking `npm run release`; publish and GitHub Releases happen only if the pipeline is green.
 - Add an `NPM_TOKEN` secret in the repository settings with _publish_ permissions so the workflow can push packages to npm; `GITHUB_TOKEN` is provided automatically.
 - Release artifacts include updated `CHANGELOG.md`, the version bump in `package.json`, and a GitHub Release that mirrors the changelog entry.
