@@ -1,3 +1,9 @@
+## 1.2.0 (2025-11-29)
+
+* chore(release): 1.0.0 ([8f541d5](https://github.com/chasesaurabh/mcp-page-capture/commit/8f541d5))
+* feat: document release triggers ([cf3eeca](https://github.com/chasesaurabh/mcp-page-capture/commit/cf3eeca))
+* Add release automation with semantic-release and GitHub Actions ([c528732](https://github.com/chasesaurabh/mcp-page-capture/commit/c528732))
+
 ## 1.0.0 (2025-11-29)
 
 * feat: document release triggers ([cf3eeca](https://github.com/chasesaurabh/mcp-page-capture/commit/cf3eeca))
