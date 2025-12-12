@@ -78,9 +78,47 @@ export interface WaitForSelectorStep {
 
 export interface ScreenshotStep {
   type: "screenshot";
+  /** Whether to capture the entire scrollable page. If false, captures only the visible viewport. */
+  fullPage?: boolean;
+  /** CSS selector of a specific element to capture. If provided, only this element is captured. */
+  selector?: string;
 }
 
-export type ActionStep = DelayStep | ClickStep | ScrollStep | WaitForSelectorStep | ScreenshotStep;
+export interface CookieActionStep {
+  type: "cookie";
+  /** The operation to perform on cookies: 'set' to add/update, 'delete' to remove, 'get' to read a cookie value, 'list' to get all cookies. */
+  action: "set" | "delete" | "get" | "list";
+  /** Cookie name. Required for 'set', 'delete', and 'get' operations. Not needed for 'list'. */
+  name?: string;
+  /** Cookie value. Required when action is 'set'. */
+  value?: string;
+  /** The domain the cookie applies to. */
+  domain?: string;
+  /** The path the cookie applies to. */
+  path?: string;
+  /** Whether the cookie is secure (HTTPS only). */
+  secure?: boolean;
+  /** Whether the cookie is HTTP-only (not accessible via JavaScript). */
+  httpOnly?: boolean;
+  /** The SameSite attribute of the cookie. */
+  sameSite?: "Strict" | "Lax" | "None";
+  /** Unix timestamp (in seconds) when the cookie expires. */
+  expires?: number;
+}
+
+export interface StorageActionStep {
+  type: "storage";
+  /** The storage type to manipulate: 'localStorage' or 'sessionStorage'. */
+  storageType: "localStorage" | "sessionStorage";
+  /** The operation to perform: 'set' to add/update, 'delete' to remove a key, 'clear' to remove all items, 'get' to read a value, 'list' to get all keys. */
+  action: "set" | "delete" | "clear" | "get" | "list";
+  /** Storage key. Required for 'set', 'delete', and 'get' operations. */
+  key?: string;
+  /** Storage value. Required when action is 'set'. */
+  value?: string;
+}
+
+export type ActionStep = DelayStep | ClickStep | ScrollStep | WaitForSelectorStep | ScreenshotStep | CookieActionStep | StorageActionStep;
 
 export interface CaptureScreenshotInput {
   url: string;

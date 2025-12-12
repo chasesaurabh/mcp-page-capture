@@ -9,6 +9,11 @@ const evaluateQueue: EvaluateResult[] = [];
 let waitForSelectorImpl: (selector: string, options?: any) => Promise<any> = async () => ({});
 let clickImpl: (selector: string, options?: any) => Promise<void> = async () => undefined;
 let waitForNavigationImpl: (options?: any) => Promise<any> = async () => ({});
+let cookiesImpl: () => Promise<any[]> = async () => [];
+let deleteCookieImpl: (cookie: any) => Promise<void> = async () => undefined;
+let elementSelectorImpl: (selector: string) => Promise<any> = async (selector: string) => ({
+  screenshot: vi.fn(async () => screenshotBuffer),
+});
 
 const mockPage = {
   setViewport: vi.fn(async () => undefined),
@@ -29,6 +34,9 @@ const mockPage = {
   waitForNavigation: vi.fn(async (options?: any) => waitForNavigationImpl(options)),
   setUserAgent: vi.fn(async () => undefined),
   evaluateOnNewDocument: vi.fn(async () => undefined),
+  cookies: vi.fn(async () => cookiesImpl()),
+  deleteCookie: vi.fn(async (cookie: any) => deleteCookieImpl(cookie)),
+  $: vi.fn(async (selector: string) => elementSelectorImpl(selector)),
 };
 
 const mockBrowser = {
@@ -91,6 +99,29 @@ export function setWaitForNavigationImpl(impl: (options?: any) => Promise<any>) 
   waitForNavigationImpl = impl;
 }
 
+export function setCookiesImpl(impl: () => Promise<any[]>) {
+  cookiesImpl = impl;
+}
+
+export function setDeleteCookieImpl(impl: (cookie: any) => Promise<void>) {
+  deleteCookieImpl = impl;
+}
+
+export function setElementSelectorImpl(impl: (selector: string) => Promise<any>) {
+  elementSelectorImpl = impl;
+}
+
+export function setElementSelectorNotFound(selector: string) {
+  elementSelectorImpl = async (sel: string) => {
+    if (sel === selector) {
+      return null;
+    }
+    return {
+      screenshot: vi.fn(async () => screenshotBuffer),
+    };
+  };
+}
+
 export function setWaitForSelectorFailure(selector: string) {
   waitForSelectorImpl = async (sel: string) => {
     if (sel === selector) {
@@ -116,12 +147,20 @@ export function resetPuppeteerMock() {
   mockPage.waitForNavigation.mockClear();
   mockPage.setUserAgent.mockClear();
   mockPage.evaluateOnNewDocument.mockClear();
+  mockPage.cookies.mockClear();
+  mockPage.deleteCookie.mockClear();
+  mockPage.$.mockClear();
   evaluateQueue.length = 0;
   screenshotBuffer = Buffer.from("mock-image");
   setGotoSuccess();
   waitForSelectorImpl = async () => ({});
   clickImpl = async () => undefined;
   waitForNavigationImpl = async () => ({});
+  cookiesImpl = async () => [];
+  deleteCookieImpl = async () => undefined;
+  elementSelectorImpl = async (selector: string) => ({
+    screenshot: vi.fn(async () => screenshotBuffer),
+  });
 }
 
 export { launchMock, mockBrowser, mockPage };

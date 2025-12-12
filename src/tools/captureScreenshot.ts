@@ -4,7 +4,7 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { Logger } from "../logger.js";
-import type { CaptureScreenshotInput, CaptureScreenshotResult, ScreenshotMetadata, ViewportConfig, RetryConfig, ScrollConfig, ClickAction, ActionStep } from "../types/screenshot.js";
+import type { CaptureScreenshotInput, CaptureScreenshotResult, ScreenshotMetadata, ViewportConfig, RetryConfig, ScrollConfig, ClickAction, ActionStep, ScreenshotStep, CookieActionStep, StorageActionStep } from "../types/screenshot.js";
 import { normalizeHeadersInput, toPuppeteerCookies } from "../utils/requestOptions.js";
 import { normalizeUrl } from "../utils/url.js";
 import { withRetry, type RetryPolicy } from "../utils/retry.js";
@@ -116,7 +116,30 @@ const waitForSelectorStepSchema = z.object({
 
 const screenshotStepSchema = z.object({
   type: z.literal("screenshot").describe("Step type identifier."),
-}).describe("A step that captures a screenshot at the current page state.");
+  fullPage: z.boolean().optional().describe("Whether to capture the entire scrollable page. If false or omitted, captures only the visible viewport. Overrides the top-level fullPage setting for this specific screenshot."),
+  selector: z.string().min(1).optional().describe("CSS selector of a specific element to capture. If provided, only this element is captured instead of the full page or viewport."),
+}).describe("A step that captures a screenshot at the current page state. Supports full-page capture or targeting a specific element by selector.");
+
+const cookieActionStepSchema = z.object({
+  type: z.literal("cookie").describe("Step type identifier."),
+  action: z.enum(["set", "delete", "get", "list"]).describe("The operation to perform: 'set' to add or update a cookie, 'delete' to remove a cookie, 'get' to read a cookie's value, 'list' to get all cookies."),
+  name: z.string().min(1).optional().describe("The name of the cookie. Required for 'set', 'delete', and 'get' operations. Not needed for 'list'."),
+  value: z.string().optional().describe("The value of the cookie. Required when action is 'set'."),
+  domain: z.string().optional().describe("The domain the cookie applies to."),
+  path: z.string().optional().describe("The path the cookie applies to."),
+  secure: z.boolean().optional().describe("Whether the cookie is secure (HTTPS only)."),
+  httpOnly: z.boolean().optional().describe("Whether the cookie is HTTP-only (not accessible via JavaScript)."),
+  sameSite: z.enum(["Strict", "Lax", "None"]).optional().describe("The SameSite attribute of the cookie."),
+  expires: z.number().optional().describe("Unix timestamp (in seconds) when the cookie expires."),
+}).describe("A step that manages cookies in the browser. Use 'set' to add/update, 'delete' to remove, 'get' to read a specific cookie, 'list' to get all cookies.");
+
+const storageActionStepSchema = z.object({
+  type: z.literal("storage").describe("Step type identifier."),
+  storageType: z.enum(["localStorage", "sessionStorage"]).describe("The type of web storage to manipulate."),
+  action: z.enum(["set", "delete", "clear", "get", "list"]).describe("The operation to perform: 'set' to add/update an item, 'delete' to remove a specific key, 'clear' to remove all items, 'get' to read a value, 'list' to get all keys."),
+  key: z.string().optional().describe("The storage key. Required for 'set', 'delete', and 'get' operations."),
+  value: z.string().optional().describe("The value to store. Required when action is 'set'."),
+}).describe("A step that manages localStorage or sessionStorage. Use 'set' to add/update, 'delete' to remove, 'clear' to remove all, 'get' to read a value, 'list' to get all keys.");
 
 const actionStepSchema = z.discriminatedUnion("type", [
   delayStepSchema,
@@ -124,9 +147,11 @@ const actionStepSchema = z.discriminatedUnion("type", [
   scrollStepSchema,
   waitForSelectorStepSchema,
   screenshotStepSchema,
+  cookieActionStepSchema,
+  storageActionStepSchema,
 ]);
 
-const stepsSchema = z.array(actionStepSchema).optional().describe("Ordered sequence of action steps to execute. Supports delay, click, scroll, waitForSelector, and screenshot steps.");
+const stepsSchema = z.array(actionStepSchema).optional().describe("Ordered sequence of action steps to execute. Supports: delay (pause execution), click (interact with elements), scroll (navigate page), waitForSelector (wait for elements), screenshot (capture with optional fullPage/selector), cookie (add/edit/delete cookies), and storage (manage localStorage/sessionStorage).");
 
 const captureScreenshotSchema = z.object({
   url: z
@@ -743,12 +768,143 @@ async function executeSteps(
         }
 
         case "screenshot": {
-          logger?.debug("step:screenshot", { index: i, fullPage });
-          screenshotBuffer = (await page.screenshot({
-            type: "png",
-            fullPage,
-          })) as Buffer;
+          // Use step-level fullPage if specified, otherwise fall back to default
+          const useFullPage = step.fullPage !== undefined ? step.fullPage : fullPage;
+          logger?.debug("step:screenshot", { index: i, fullPage: useFullPage, selector: step.selector });
+          
+          if (step.selector) {
+            // Capture specific element
+            const element = await page.$(step.selector);
+            if (element) {
+              screenshotBuffer = (await element.screenshot({ type: "png" })) as Buffer;
+            } else {
+              logger?.warn("step:screenshot:selector_not_found", { index: i, selector: step.selector });
+              // Fall back to page screenshot
+              screenshotBuffer = (await page.screenshot({
+                type: "png",
+                fullPage: useFullPage,
+              })) as Buffer;
+            }
+          } else {
+            screenshotBuffer = (await page.screenshot({
+              type: "png",
+              fullPage: useFullPage,
+            })) as Buffer;
+          }
           screenshotsTaken++;
+          stepsExecuted++;
+          break;
+        }
+
+        case "cookie": {
+          logger?.debug("step:cookie", { index: i, action: step.action, name: step.name });
+          
+          if (step.action === "set" && step.name) {
+            const cookieData: {
+              name: string;
+              value: string;
+              domain?: string;
+              path?: string;
+              secure?: boolean;
+              httpOnly?: boolean;
+              sameSite?: "Strict" | "Lax" | "None";
+              expires?: number;
+            } = {
+              name: step.name,
+              value: step.value || "",
+            };
+            if (step.domain) cookieData.domain = step.domain;
+            if (step.path) cookieData.path = step.path;
+            if (step.secure !== undefined) cookieData.secure = step.secure;
+            if (step.httpOnly !== undefined) cookieData.httpOnly = step.httpOnly;
+            if (step.sameSite) cookieData.sameSite = step.sameSite;
+            if (step.expires !== undefined) cookieData.expires = step.expires;
+            
+            await page.setCookie(cookieData);
+            logger?.debug("step:cookie:set", { index: i, name: step.name });
+          } else if (step.action === "delete" && step.name) {
+            const cookies = await page.cookies();
+            const cookieToDelete = cookies.find(c => c.name === step.name);
+            if (cookieToDelete) {
+              await page.deleteCookie({ name: step.name, domain: cookieToDelete.domain });
+              logger?.debug("step:cookie:deleted", { index: i, name: step.name });
+            } else {
+              logger?.warn("step:cookie:not_found", { index: i, name: step.name });
+            }
+          } else if (step.action === "get" && step.name) {
+            const cookies = await page.cookies();
+            const cookie = cookies.find(c => c.name === step.name);
+            if (cookie) {
+              logger?.info("step:cookie:get", { index: i, name: step.name, value: cookie.value });
+            } else {
+              logger?.warn("step:cookie:get:not_found", { index: i, name: step.name });
+            }
+          } else if (step.action === "list") {
+            const cookies = await page.cookies();
+            const cookieNames = cookies.map(c => c.name);
+            logger?.info("step:cookie:list", { index: i, count: cookies.length, cookies: cookieNames });
+          }
+          stepsExecuted++;
+          break;
+        }
+
+        case "storage": {
+          logger?.debug("step:storage", { index: i, storageType: step.storageType, action: step.action, key: step.key });
+          
+          if (step.action === "get") {
+            const result = await page.evaluate(
+              (params: { storageType: string; key?: string }) => {
+                const storage = params.storageType === "localStorage" ? localStorage : sessionStorage;
+                if (params.key !== undefined) {
+                  return storage.getItem(params.key);
+                }
+                return null;
+              },
+              { storageType: step.storageType, key: step.key }
+            );
+            logger?.info("step:storage:get", { index: i, storageType: step.storageType, key: step.key, value: result });
+          } else if (step.action === "list") {
+            const keys = await page.evaluate(
+              (params: { storageType: string }) => {
+                const storage = params.storageType === "localStorage" ? localStorage : sessionStorage;
+                const keys: string[] = [];
+                for (let i = 0; i < storage.length; i++) {
+                  const key = storage.key(i);
+                  if (key !== null) {
+                    keys.push(key);
+                  }
+                }
+                return keys;
+              },
+              { storageType: step.storageType }
+            );
+            logger?.info("step:storage:list", { index: i, storageType: step.storageType, count: keys.length, keys });
+          } else {
+            await page.evaluate(
+              (params: { storageType: string; action: string; key?: string; value?: string }) => {
+                const storage = params.storageType === "localStorage" ? localStorage : sessionStorage;
+                
+                switch (params.action) {
+                  case "set":
+                    if (params.key !== undefined) {
+                      storage.setItem(params.key, params.value || "");
+                    }
+                    break;
+                  case "delete":
+                    if (params.key !== undefined) {
+                      storage.removeItem(params.key);
+                    }
+                    break;
+                  case "clear":
+                    storage.clear();
+                    break;
+                }
+              },
+              { storageType: step.storageType, action: step.action, key: step.key, value: step.value }
+            );
+          }
+          
+          logger?.debug("step:storage:completed", { index: i, storageType: step.storageType, action: step.action });
           stepsExecuted++;
           break;
         }

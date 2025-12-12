@@ -10,6 +10,8 @@ import {
   setGotoFailure,
   setScreenshotBuffer,
   setWaitForSelectorFailure,
+  setCookiesImpl,
+  setElementSelectorNotFound,
 } from "../helpers/puppeteerMock.js";
 import { registerCaptureScreenshotTool } from "../../src/tools/captureScreenshot.js";
 import { registerExtractDomTool } from "../../src/tools/extractDom.js";
@@ -779,6 +781,698 @@ describe("captureScreenshot tool", () => {
       expect(mockPage.click).toHaveBeenNthCalledWith(2, ".after-btn", {});
       expect(mockPage.screenshot).toHaveBeenCalled();
       expect(response.content[0].text).toContain("Steps executed: 3");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes screenshot step with fullPage override", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 2000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("fullpage-override-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/fullpage-override",
+        fullPage: false,
+        steps: [
+          { type: "screenshot", fullPage: true },
+        ],
+      });
+
+      expect(mockPage.screenshot).toHaveBeenCalledWith({ type: "png", fullPage: true });
+      expect(response.content[0].text).toContain("Steps executed: 1");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes screenshot step with selector to capture element", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("element-screenshot-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/element-screenshot",
+        fullPage: false,
+        steps: [
+          { type: "screenshot", selector: ".target-element" },
+        ],
+      });
+
+      expect(mockPage.$).toHaveBeenCalledWith(".target-element");
+      expect(response.content[0].text).toContain("Steps executed: 1");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to page screenshot when element selector not found", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Set up element selector to return null for the target
+      setElementSelectorNotFound(".nonexistent-element");
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("fallback-screenshot-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/fallback-screenshot",
+        fullPage: false,
+        steps: [
+          { type: "screenshot", selector: ".nonexistent-element" },
+        ],
+      });
+
+      expect(mockPage.$).toHaveBeenCalledWith(".nonexistent-element");
+      expect(mockPage.screenshot).toHaveBeenCalledWith({ type: "png", fullPage: false });
+      expect(response.content[0].text).toContain("Steps executed: 1");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes cookie set step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("cookie-set-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/cookie-set",
+        fullPage: false,
+        steps: [
+          { type: "cookie", action: "set", name: "session", value: "abc123" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.setCookie).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "session",
+          value: "abc123",
+        }),
+      );
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes cookie set step with all options", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("cookie-full-options-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/cookie-full",
+        fullPage: false,
+        steps: [
+          { 
+            type: "cookie", 
+            action: "set", 
+            name: "auth", 
+            value: "token123",
+            domain: "example.com",
+            path: "/app",
+            secure: true,
+            httpOnly: true,
+            sameSite: "Strict",
+            expires: 1735689600,
+          },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.setCookie).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "auth",
+          value: "token123",
+          domain: "example.com",
+          path: "/app",
+          secure: true,
+          httpOnly: true,
+          sameSite: "Strict",
+          expires: 1735689600,
+        }),
+      );
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes cookie delete step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Set up cookies to return the cookie to delete
+      setCookiesImpl(async () => [
+        { name: "session", value: "abc123", domain: "example.com" },
+      ]);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("cookie-delete-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/cookie-delete",
+        fullPage: false,
+        steps: [
+          { type: "cookie", action: "delete", name: "session" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.cookies).toHaveBeenCalled();
+      expect(mockPage.deleteCookie).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "session",
+          domain: "example.com",
+        }),
+      );
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("handles cookie delete when cookie not found", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Set up cookies to return empty array
+      setCookiesImpl(async () => []);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("cookie-not-found-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/cookie-not-found",
+        fullPage: false,
+        steps: [
+          { type: "cookie", action: "delete", name: "nonexistent" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.cookies).toHaveBeenCalled();
+      expect(mockPage.deleteCookie).not.toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes localStorage set step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: storage operation, then metrics
+      queueEvaluateResult(undefined);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("localstorage-set-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/storage-set",
+        fullPage: false,
+        steps: [
+          { type: "storage", storageType: "localStorage", action: "set", key: "user", value: "john" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes sessionStorage set step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: storage operation, then metrics
+      queueEvaluateResult(undefined);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("sessionstorage-set-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/session-storage-set",
+        fullPage: false,
+        steps: [
+          { type: "storage", storageType: "sessionStorage", action: "set", key: "token", value: "xyz789" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes storage delete step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: storage operation, then metrics
+      queueEvaluateResult(undefined);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("storage-delete-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/storage-delete",
+        fullPage: false,
+        steps: [
+          { type: "storage", storageType: "localStorage", action: "delete", key: "user" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes storage clear step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: storage operation, then metrics
+      queueEvaluateResult(undefined);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("storage-clear-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/storage-clear",
+        fullPage: false,
+        steps: [
+          { type: "storage", storageType: "sessionStorage", action: "clear" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes cookie get step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Set up cookies to return the cookie to get
+      setCookiesImpl(async () => [
+        { name: "session", value: "abc123", domain: "example.com" },
+        { name: "user", value: "john", domain: "example.com" },
+      ]);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("cookie-get-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/cookie-get",
+        fullPage: false,
+        steps: [
+          { type: "cookie", action: "get", name: "session" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.cookies).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith("step:cookie:get", expect.objectContaining({
+        name: "session",
+        value: "abc123",
+      }));
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("handles cookie get when cookie not found", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Set up cookies to return empty array
+      setCookiesImpl(async () => []);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("cookie-get-not-found-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/cookie-get-not-found",
+        fullPage: false,
+        steps: [
+          { type: "cookie", action: "get", name: "nonexistent" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.cookies).toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith("step:cookie:get:not_found", expect.objectContaining({
+        name: "nonexistent",
+      }));
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes cookie list step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Set up cookies to return
+      setCookiesImpl(async () => [
+        { name: "session", value: "abc123", domain: "example.com" },
+        { name: "user", value: "john", domain: "example.com" },
+        { name: "preference", value: "dark", domain: "example.com" },
+      ]);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("cookie-list-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/cookie-list",
+        fullPage: false,
+        steps: [
+          { type: "cookie", action: "list" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.cookies).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith("step:cookie:list", expect.objectContaining({
+        count: 3,
+        cookies: ["session", "user", "preference"],
+      }));
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes storage get step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: storage get operation returns value, then metrics
+      queueEvaluateResult("john");
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("storage-get-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/storage-get",
+        fullPage: false,
+        steps: [
+          { type: "storage", storageType: "localStorage", action: "get", key: "user" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith("step:storage:get", expect.objectContaining({
+        storageType: "localStorage",
+        key: "user",
+        value: "john",
+      }));
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes storage get step with null result", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: storage get operation returns null, then metrics
+      queueEvaluateResult(null);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("storage-get-null-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/storage-get-null",
+        fullPage: false,
+        steps: [
+          { type: "storage", storageType: "sessionStorage", action: "get", key: "nonexistent" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith("step:storage:get", expect.objectContaining({
+        storageType: "sessionStorage",
+        key: "nonexistent",
+        value: null,
+      }));
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes storage list step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: storage list operation returns keys, then metrics
+      queueEvaluateResult(["user", "token", "preferences"]);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("storage-list-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/storage-list",
+        fullPage: false,
+        steps: [
+          { type: "storage", storageType: "localStorage", action: "list" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith("step:storage:list", expect.objectContaining({
+        storageType: "localStorage",
+        count: 3,
+        keys: ["user", "token", "preferences"],
+      }));
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes storage list step with empty storage", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: storage list operation returns empty array, then metrics
+      queueEvaluateResult([]);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("storage-list-empty-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/storage-list-empty",
+        fullPage: false,
+        steps: [
+          { type: "storage", storageType: "sessionStorage", action: "list" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith("step:storage:list", expect.objectContaining({
+        storageType: "sessionStorage",
+        count: 0,
+        keys: [],
+      }));
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes complex workflow with all new step types", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Set up cookies for delete operation
+      setCookiesImpl(async () => [
+        { name: "old-cookie", value: "old-value", domain: "example.com" },
+      ]);
+
+      // Queue evaluate results: storage set, storage delete, then metrics
+      queueEvaluateResult(undefined);
+      queueEvaluateResult(undefined);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("complex-workflow-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/complex-workflow",
+        fullPage: false,
+        steps: [
+          { type: "cookie", action: "set", name: "auth", value: "token" },
+          { type: "cookie", action: "delete", name: "old-cookie" },
+          { type: "storage", storageType: "localStorage", action: "set", key: "user", value: "john" },
+          { type: "storage", storageType: "sessionStorage", action: "clear" },
+          { type: "click", selector: ".login-btn" },
+          { type: "delay", duration: 50 },
+          { type: "screenshot", fullPage: true },
+        ],
+      });
+
+      expect(mockPage.setCookie).toHaveBeenCalledTimes(1); // cookie set step only
+      expect(mockPage.deleteCookie).toHaveBeenCalled();
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(mockPage.click).toHaveBeenCalledWith(".login-btn", {});
+      expect(response.content[0].text).toContain("Steps executed: 7");
       expect(mockBrowser.close).toHaveBeenCalledTimes(1);
     });
   });
