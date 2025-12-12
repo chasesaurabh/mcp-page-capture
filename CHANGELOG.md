@@ -22,6 +22,28 @@ All notable changes to this project will be documented in this file following [S
 
 ## [Unreleased]
 
+### Added
+- **Advanced Viewport Presets**: Added comprehensive viewport presets for desktop (FHD, HD, 4K, MacBook Pro), tablets (iPad Pro, iPad, Surface Pro), and mobile devices (iPhone 14 Pro Max/Pro, iPhone SE, Pixel 7 Pro, Galaxy S23 Ultra) with proper user agents and device emulation
+- **Automatic Retry Logic**: Implemented automatic retry with exponential backoff for transient failures (HTTP 5xx, timeouts, DNS errors) with configurable retry policies
+- **Telemetry System**: Added comprehensive telemetry hooks with event emitter for monitoring tool invocations, navigation events, retries, and browser lifecycle with support for HTTP sink and custom handlers
+- **Pluggable Storage Backends**: Introduced abstraction for storage targets with implementations for local filesystem, S3-compatible storage (placeholder), and in-memory storage
+- **Docker Multi-Platform Support**: Updated Docker build to support multi-platform images (linux/amd64, linux/arm64) with automated publishing to Docker Hub and GitHub Container Registry
+- **Enhanced Tool Options**: Extended `captureScreenshot` and `extractDom` tools with viewport configuration, retry policies, and storage target selection
+- **Non-root Docker User**: Improved security by running container as non-root user with proper volume mounts
+- **Health Checks**: Added Docker health check for container monitoring
+- **GitHub Actions Enhancements**: Extended CI/CD pipeline to automatically build and publish Docker images on releases
+
+### Changed
+- Refactored Puppeteer launch logic to be DRY and support viewport emulation
+- Updated tool schemas with Zod validation for new configuration options
+- Enhanced error handling with retry context and telemetry integration
+- Improved Dockerfile with multi-stage build optimizations and security best practices
+
+### Fixed
+- Added proper viewport and user agent handling for mobile device emulation
+- Improved error messages to include retry attempt information
+- Fixed TypeScript compilation issues with proper type exports
+
 ## [1.1.0] - 2025-11-26
 ### Added
 - Added a distributable CLI (`mcp-page-capture`) plus programmatic helpers for custom transports.

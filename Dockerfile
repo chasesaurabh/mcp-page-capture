@@ -2,16 +2,27 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 
+# Build argument for version
+ARG VERSION=latest
+
 COPY package*.json ./
-RUN npm install
+RUN npm ci --only=production && npm cache clean --force
 
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build
+RUN npm install --only=dev && npm run build && npm prune --production
 
 # Stage 2: Runtime image with Chromium deps for Puppeteer
 FROM node:20-slim
 WORKDIR /app
+
+# Build argument and labels
+ARG VERSION=latest
+LABEL org.opencontainers.image.title="mcp-page-capture"
+LABEL org.opencontainers.image.description="MCP server for webpage screenshot capture and DOM extraction"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.source="https://github.com/chasesaurabh/mcp-page-capture"
+LABEL org.opencontainers.image.licenses="MIT"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -53,11 +64,32 @@ RUN apt-get update \
        xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy package files and install production dependencies
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm ci --only=production && npm cache clean --force
 
+# Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
 
+# Set environment variables
 ENV NODE_ENV=production
+ENV LOG_LEVEL=info
 
+# Create non-root user for security
+RUN groupadd -r mcpuser && useradd -r -g mcpuser mcpuser
+
+# Create captures directory with proper permissions
+RUN mkdir -p /app/captures && chown -R mcpuser:mcpuser /app
+
+# Switch to non-root user
+USER mcpuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "process.exit(0)" || exit 1
+
+# Expose volume for captures
+VOLUME ["/app/captures"]
+
+# Start the MCP server
 CMD ["node", "dist/cli.js"]

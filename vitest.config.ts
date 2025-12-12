@@ -6,5 +6,6 @@ export default defineConfig({
     include: ["tests/**/*.spec.ts"],
     reporters: ["default"],
     globals: false,
+    globalSetup: ["tests/setup.ts"],
   },
 });

@@ -24,6 +24,9 @@ logs/
 coverage/
 .nyc_output/
 
+# Test artifacts
+test-artifacts/*
+
 # Environment
 .env
 .env.*

@@ -1,4 +1,4 @@
-import type { CaptureCookieInput } from "./screenshot.js";
+import type { CaptureCookieInput, ViewportConfig, RetryConfig } from "./screenshot.js";
 
 export type DomNode =
   | {
@@ -17,6 +17,9 @@ export interface ExtractDomInput {
   selector?: string;
   headers?: Record<string, string>;
   cookies?: CaptureCookieInput[];
+  viewport?: ViewportConfig;
+  retryPolicy?: RetryConfig;
+  storageTarget?: string;
 }
 
 export interface ExtractDomResult {
@@ -28,4 +31,7 @@ export interface ExtractDomResult {
   nodeCount: number;
   truncated: boolean;
   capturedAt: string;
+  viewportPreset?: string;
+  retryAttempts?: number;
+  storageLocation?: string;
 }

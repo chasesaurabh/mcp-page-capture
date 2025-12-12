@@ -11,12 +11,17 @@
 mcp-page-capture is a Model Context Protocol (MCP) server that orchestrates headless Chromium via Puppeteer to capture pixel-perfect screenshots of arbitrary URLs. It is optimized for Copilot/MCP-enabled environments and can be embedded into automated workflows or run as a standalone developer tool.
 
 ## Features
-- 📸 High-fidelity screenshots powered by Puppeteer and headless Chromium.
-- ⚙️ Declarative MCP tool schema for predictable integrations and strong validation.
-- 🔍 Structured DOM extraction with optional CSS selectors for AI-friendly consumption.
-- 🛡️ Structured logging plus defensive error handling for operational visibility.
-- 🔌 Launch via `npm start`, `npm run dev`, or as a long-lived MCP sidecar.
-- 🧩 Configurable options for target URL selection and full-page captures.
+- 📸 High-fidelity screenshots powered by Puppeteer and headless Chromium
+- ⚙️ Declarative MCP tool schema for predictable integrations and strong validation
+- 🔍 Structured DOM extraction with optional CSS selectors for AI-friendly consumption
+- 📱 Advanced viewport presets and mobile emulation profiles (iPhone, iPad, Android, desktop)
+- 🔄 Automatic retry with exponential backoff for transient failures
+- 📊 Telemetry hooks for centralized observability and monitoring
+- 💾 Pluggable storage backends (local filesystem, S3, memory)
+- 🛡️ Structured logging plus defensive error handling for operational visibility
+- 🔌 Launch via `npm start`, `npm run dev`, or as a long-lived MCP sidecar
+- 🧩 Configurable options for target URL selection and full-page captures
+- 🐳 Docker image with multi-platform support (amd64, arm64)
 
 ## How It Works
 1. The MCP transport boots a Node.js server and registers the `captureScreenshot` and `extractDom` tools.
@@ -165,36 +170,207 @@ await startMcpPageCaptureServer();
 ## Supported options
 
 ### `captureScreenshot`
-- `url` (string, required): Fully-qualified URL to capture.
-- `fullPage` (boolean, optional, default `false`): Capture the entire scrollable page instead of the current viewport.
-- `headers` (object, optional): Key/value map of HTTP headers to send with the initial page navigation.
-- `cookies` (array, optional): List of cookies to set before navigation. Each cookie supports `name`, `value`, and optional `url`, `domain`, `path`, `secure`, `httpOnly`, `sameSite`, and `expires` (Unix timestamp, seconds).
+- `url` (string, required): Fully-qualified URL to capture
+- `fullPage` (boolean, optional, default `false`): Capture the entire scrollable page instead of the current viewport
+- `headers` (object, optional): Key/value map of HTTP headers to send with the initial page navigation
+- `cookies` (array, optional): List of cookies to set before navigation. Each cookie supports `name`, `value`, and optional `url`, `domain`, `path`, `secure`, `httpOnly`, `sameSite`, and `expires` (Unix timestamp, seconds)
+- `viewport` (object, optional): Viewport configuration
+  - `preset` (string, optional): Use a predefined viewport preset (see Viewport Presets section)
+  - `width` (number, optional): Custom viewport width
+  - `height` (number, optional): Custom viewport height
+  - `deviceScaleFactor` (number, optional): Device scale factor (e.g., 2 for Retina)
+  - `isMobile` (boolean, optional): Whether to emulate mobile device
+  - `hasTouch` (boolean, optional): Whether to enable touch events
+  - `userAgent` (string, optional): Custom user agent string
+- `retryPolicy` (object, optional): Retry configuration for transient failures
+  - `maxRetries` (number, optional, default 3): Maximum number of retry attempts
+  - `initialDelayMs` (number, optional, default 1000): Initial delay between retries
+  - `maxDelayMs` (number, optional, default 10000): Maximum delay between retries
+  - `backoffMultiplier` (number, optional, default 2): Exponential backoff multiplier
+- `storageTarget` (string, optional): Storage backend name for saving captures
 
 ### `extractDom`
-- `url` (string, required): Fully-qualified URL to inspect.
-- `selector` (string, optional): CSS selector to scope extraction to a specific element. Defaults to the entire document.
-- `headers` (object, optional): Key/value map of HTTP headers sent before navigation.
-- `cookies` (array, optional): Same cookie structure as `captureScreenshot`, applied before navigation.
+- `url` (string, required): Fully-qualified URL to inspect
+- `selector` (string, optional): CSS selector to scope extraction to a specific element. Defaults to the entire document
+- `headers` (object, optional): Key/value map of HTTP headers sent before navigation
+- `cookies` (array, optional): Same cookie structure as `captureScreenshot`, applied before navigation
+- `viewport` (object, optional): Same viewport configuration as `captureScreenshot`
+- `retryPolicy` (object, optional): Same retry configuration as `captureScreenshot`
+- `storageTarget` (string, optional): Storage backend name for saving DOM data
+
+## Viewport Presets
+
+The following viewport presets are available:
+
+### Desktop
+- `desktop-fhd`: 1920x1080 Full HD
+- `desktop-hd`: 1280x720 HD
+- `desktop-4k`: 3840x2160 4K
+- `macbook-pro-16`: MacBook Pro 16-inch Retina
+
+### Tablets
+- `ipad-pro`: iPad Pro 12.9-inch
+- `ipad-pro-landscape`: iPad Pro 12.9-inch (landscape)
+- `ipad`: iPad 10.2-inch
+- `surface-pro`: Microsoft Surface Pro
+
+### Mobile
+- `iphone-14-pro-max`: iPhone 14 Pro Max
+- `iphone-14-pro`: iPhone 14 Pro
+- `iphone-se`: iPhone SE (3rd generation)
+- `pixel-7-pro`: Google Pixel 7 Pro
+- `galaxy-s23-ultra`: Samsung Galaxy S23 Ultra
+
+### Example with viewport preset:
+```json
+{
+  "tool": "captureScreenshot",
+  "params": {
+    "url": "https://example.com",
+    "viewport": {
+      "preset": "iphone-14-pro"
+    }
+  }
+}
+```
+
+## Retry Policy
+
+The tools automatically retry on transient failures with exponential backoff. Default retryable conditions:
+- HTTP status codes: 500, 502, 503, 504, 408, 429
+- Network errors: ETIMEDOUT, ECONNRESET, ENOTFOUND, ECONNREFUSED
+- DNS resolution failures
+
+### Example with custom retry policy:
+```json
+{
+  "tool": "captureScreenshot",
+  "params": {
+    "url": "https://example.com",
+    "retryPolicy": {
+      "maxRetries": 5,
+      "initialDelayMs": 2000,
+      "backoffMultiplier": 1.5
+    }
+  }
+}
+```
+
+## Telemetry
+
+The server emits structured telemetry events that can be consumed for monitoring and observability:
+
+### Event Types
+- `tool.invoked`: Tool execution started
+- `tool.completed`: Tool execution succeeded
+- `tool.failed`: Tool execution failed
+- `navigation.started`: Page navigation initiated
+- `navigation.completed`: Page navigation succeeded
+- `navigation.failed`: Page navigation failed
+- `retry.attempt`: Retry attempt started
+- `retry.succeeded`: Retry succeeded
+- `browser.launched`: Puppeteer browser started
+- `browser.closed`: Puppeteer browser closed
+- `screenshot.captured`: Screenshot taken
+- `dom.extracted`: DOM content extracted
+
+### Configuring Telemetry
+
+You can configure telemetry hooks programmatically:
+
+```typescript
+import { getGlobalTelemetry } from "mcp-page-capture";
+
+const telemetry = getGlobalTelemetry();
+
+// Configure HTTP sink for centralized collection
+telemetry.configureHttpSink({
+  url: "https://telemetry.example.com/events",
+  headers: { "X-API-Key": "your-api-key" },
+  batchSize: 100,
+  flushIntervalMs: 5000,
+});
+
+// Register custom hooks
+telemetry.registerHook({
+  name: "custom-logger",
+  enabled: true,
+  handler: async (event) => {
+    console.log(`[${event.type}]`, event.data);
+  },
+});
+```
+
+## Storage Backends
+
+Captures can be automatically saved to configurable storage backends:
+
+### Local Filesystem
+```typescript
+import { registerStorageTarget, LocalStorageTarget } from "mcp-page-capture";
+
+const localStorage = new LocalStorageTarget("/path/to/captures");
+registerStorageTarget("local", localStorage);
+```
+
+### S3-Compatible Storage
+```typescript
+import { registerStorageTarget, S3StorageTarget } from "mcp-page-capture";
+
+const s3Storage = new S3StorageTarget({
+  bucket: "my-captures",
+  prefix: "screenshots/",
+  region: "us-west-2",
+});
+registerStorageTarget("s3", s3Storage);
+```
+
+### Memory Storage
+```typescript
+import { registerStorageTarget, MemoryStorageTarget } from "mcp-page-capture";
+
+const memoryStorage = new MemoryStorageTarget();
+registerStorageTarget("memory", memoryStorage);
+```
+
+Then use the storage in tool invocations:
+```json
+{
+  "tool": "captureScreenshot",
+  "params": {
+    "url": "https://example.com",
+    "storageTarget": "s3"
+  }
+}
+```
 
 ## Known limitations
-- Dynamic pages requiring authentication or user gestures are not yet automated.
-- Extremely long or infinite-scroll pages may exceed default Chromium memory limits.
-- Output destinations are local-only; remote storage adapters are tracked on the roadmap.
+- Dynamic pages requiring complex authentication flows or user gestures are not yet automated
+- Extremely long or infinite-scroll pages may exceed default Chromium memory limits
+- S3 storage backend requires AWS SDK integration (placeholder implementation included)
 
-## Roadmap
-- Configurable output targets (S3, Azure Blob, GCS).
-- Advanced viewport presets and mobile emulation profiles.
-- Automatic retries/backoff for transient navigation failures.
-- Telemetry hooks for centralized observability.
-- Docker image publishing and npm package distribution.
 
-## Automated Releases
-- Release automation is powered by [semantic-release](https://semantic-release.gitbook.io/semantic-release/) and a GitHub Actions workflow that runs on every push to `main`.
-- Commits must follow the Conventional Commits spec (`feat:`, `fix:`, `chore:`…) so the analyzer can infer the next semantic version and generate release notes.
-- Use `feat:` for feature work (bumps minor) and `fix:` for patches (bumps patch); append `!` or add a `BREAKING CHANGE:` footer to force a major release when needed.
-- The workflow runs lint, tests, and build before invoking `npm run release`; publish and GitHub Releases happen only if the pipeline is green.
-- Add an `NPM_TOKEN` secret in the repository settings with _publish_ permissions so the workflow can push packages to npm; `GITHUB_TOKEN` is provided automatically.
-- Release artifacts include updated `CHANGELOG.md`, the version bump in `package.json`, and a GitHub Release that mirrors the changelog entry.
+## Automated Releases & Distribution
+
+### npm Package
+- Release automation is powered by [semantic-release](https://semantic-release.gitbook.io/semantic-release/) and GitHub Actions
+- Commits must follow the Conventional Commits spec (`feat:`, `fix:`, `chore:`) for automatic versioning
+- Publishes to npm registry on successful builds from `main` branch
+
+### Docker Images
+- Multi-platform images (linux/amd64, linux/arm64) are automatically built and published
+- Images are pushed to:
+  - Docker Hub: `<username>/mcp-page-capture`
+  - GitHub Container Registry: `ghcr.io/<org>/mcp-page-capture`
+- Tagged with semantic version, major, major.minor, and latest
+
+### Required Repository Secrets
+Configure these secrets in your GitHub repository settings:
+- `NPM_TOKEN`: npm access token with publish permissions
+- `DOCKER_USERNAME`: Docker Hub username
+- `DOCKER_PASSWORD`: Docker Hub access token
+
+The `GITHUB_TOKEN` is provided automatically by GitHub Actions.
 
 ## How to contribute
 Read `CONTRIBUTING.md`, open an issue describing the change, and submit a PR that includes `npm run build` output plus updated docs/tests.

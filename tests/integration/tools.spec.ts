@@ -96,7 +96,7 @@ describe("captureScreenshot tool", () => {
     const logger = createLogger();
     const handler = getToolHandler(registerCaptureScreenshotTool, logger);
 
-    setGotoFailure(502);
+    setGotoFailure(400);  // Use non-retryable status code
 
     await expect(
       handler({ url: "https://example.com/broken", fullPage: false }),
@@ -104,10 +104,137 @@ describe("captureScreenshot tool", () => {
       code: ErrorCode.InvalidParams,
       data: {
         url: "https://example.com/broken",
-        detail: "Navigation failed with status: 502",
+        detail: "Navigation failed with status: 400",
       },
     });
 
+    expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("scrolls to specified coordinates before capturing screenshot", async () => {
+    const logger = createLogger();
+    const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+    // Queue evaluate results: 1) scrollTo (void), 2) get position, 3) get metrics
+    queueEvaluateResult(undefined); // scrollTo returns void
+    queueEvaluateResult({ x: 100, y: 500 }); // scroll position result
+    queueEvaluateResult({
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      scrollWidth: 2000,
+      scrollHeight: 3000,
+      scrollX: 100,
+      scrollY: 500,
+    });
+
+    const imageBuffer = Buffer.from("scroll-test-image");
+    setScreenshotBuffer(imageBuffer);
+
+    const response = await handler({
+      url: "https://example.com/long-page",
+      fullPage: false,
+      scroll: {
+        x: 100,
+        y: 500,
+      },
+    });
+
+    expect(mockPage.evaluate).toHaveBeenCalled();
+    expect(response.content[0].text).toContain("Scroll position: (100, 500)");
+    expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("scrolls to element by selector before capturing screenshot", async () => {
+    const logger = createLogger();
+    const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+    // Queue evaluate results: scroll to selector result, final metrics
+    queueEvaluateResult({ ok: true, x: 0, y: 800 }); // scrollIntoView result
+    queueEvaluateResult({
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      scrollWidth: 1280,
+      scrollHeight: 2500,
+      scrollX: 0,
+      scrollY: 800,
+    });
+
+    const imageBuffer = Buffer.from("selector-scroll-image");
+    setScreenshotBuffer(imageBuffer);
+
+    const response = await handler({
+      url: "https://example.com/article",
+      fullPage: false,
+      scroll: {
+        selector: "#section-3",
+      },
+    });
+
+    expect(mockPage.evaluate).toHaveBeenCalled();
+    expect(response.content[0].text).toContain("Scroll position: (0, 800)");
+    expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles scroll with smooth behavior", async () => {
+    const logger = createLogger();
+    const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+    // Queue evaluate results: 1) scrollTo (void), 2) get position, 3) get metrics
+    queueEvaluateResult(undefined); // scrollTo returns void
+    queueEvaluateResult({ x: 0, y: 1000 }); // scroll position after smooth scroll
+    queueEvaluateResult({
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      scrollWidth: 1280,
+      scrollHeight: 5000,
+      scrollX: 0,
+      scrollY: 1000,
+    });
+
+    const imageBuffer = Buffer.from("smooth-scroll-image");
+    setScreenshotBuffer(imageBuffer);
+
+    const response = await handler({
+      url: "https://example.com/smooth",
+      fullPage: false,
+      scroll: {
+        y: 1000,
+        behavior: "smooth",
+      },
+    });
+
+    expect(response.content[0].text).toContain("Scroll position: (0, 1000)");
+    expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("gracefully handles selector not found during scroll", async () => {
+    const logger = createLogger();
+    const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+    // Queue evaluate results: selector not found, final metrics
+    queueEvaluateResult({ ok: false, error: "Element not found: #nonexistent" });
+    queueEvaluateResult({
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      scrollWidth: 1280,
+      scrollHeight: 1000,
+      scrollX: 0,
+      scrollY: 0,
+    });
+
+    const imageBuffer = Buffer.from("no-scroll-image");
+    setScreenshotBuffer(imageBuffer);
+
+    const response = await handler({
+      url: "https://example.com/page",
+      fullPage: false,
+      scroll: {
+        selector: "#nonexistent",
+      },
+    });
+
+    // Should still capture screenshot but with scroll at 0,0
+    expect(response.content[0].text).toContain("Scroll position: (0, 0)");
     expect(mockBrowser.close).toHaveBeenCalledTimes(1);
   });
 });
