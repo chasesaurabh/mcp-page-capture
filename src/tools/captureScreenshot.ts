@@ -11,8 +11,11 @@ import { withRetry, type RetryPolicy } from "../utils/retry.js";
 import { getViewportPreset, mergeViewportOptions, type ViewportPreset } from "../config/viewports.js";
 import { getGlobalTelemetry } from "../telemetry/index.js";
 import { getStorageTarget, getDefaultStorageTarget } from "../storage/index.js";
+import { withTimeout, safeBrowserClose, TimeoutError } from "../utils/timeout.js";
 
 const CAPTURE_TIMEOUT_MS = 45_000;
+const BROWSER_CLOSE_TIMEOUT_MS = 5_000;
+const MASTER_TIMEOUT_MS = 60_000;
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 } as const;
 
 const headersSchema = z
@@ -315,7 +318,7 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
       });
 
       const response = await page.goto(args.url, {
-        waitUntil: "networkidle0",
+        waitUntil: "networkidle2",
         timeout: CAPTURE_TIMEOUT_MS,
       });
 
@@ -444,12 +447,12 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
       throw error;
     } finally {
       await telemetry.emitTelemetry("browser.closed", { tool: "captureScreenshot" });
-      await browser.close();
+      await safeBrowserClose(browser, BROWSER_CLOSE_TIMEOUT_MS, logger);
     }
   };
   
-  // Wrap with retry logic
-  return withRetry(executeCapture, {
+  // Wrap with retry logic and master timeout to prevent indefinite hangs
+  const retryPromise = withRetry(executeCapture, {
     policy: retryPolicy,
     logger,
     context: "captureScreenshot",
@@ -458,6 +461,8 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
     retryAttempts = result.metadata.retryAttempts || 0;
     return result;
   });
+
+  return withTimeout(retryPromise, MASTER_TIMEOUT_MS, "captureScreenshot");
 }
 
 function resolveViewport(config?: ViewportConfig, logger?: Logger): ViewportPreset {
@@ -597,7 +602,7 @@ async function executeClickActions(
       if (action.waitForNavigation) {
         // Click and wait for navigation simultaneously
         await Promise.all([
-          page.waitForNavigation({ waitUntil: "networkidle0", timeout: 30000 }),
+          page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }),
           page.click(action.selector, clickOptions),
         ]);
       } else {
@@ -694,7 +699,7 @@ async function executeSteps(
           if (step.waitForNavigation) {
             // Click and wait for navigation simultaneously
             await Promise.all([
-              page.waitForNavigation({ waitUntil: "networkidle0", timeout: 30000 }),
+              page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }),
               page.click(step.selector, clickOptions),
             ]);
           } else {

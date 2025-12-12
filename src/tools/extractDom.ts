@@ -12,8 +12,11 @@ import { withRetry, type RetryPolicy } from "../utils/retry.js";
 import { getViewportPreset, mergeViewportOptions, type ViewportPreset } from "../config/viewports.js";
 import { getGlobalTelemetry } from "../telemetry/index.js";
 import { getStorageTarget, getDefaultStorageTarget } from "../storage/index.js";
+import { withTimeout, safeBrowserClose } from "../utils/timeout.js";
 
 const EXTRACTION_TIMEOUT_MS = 45_000;
+const BROWSER_CLOSE_TIMEOUT_MS = 5_000;
+const MASTER_TIMEOUT_MS = 60_000;
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 } as const;
 const MAX_DOM_NODES = 5_000;
 const MAX_HTML_CHARS = 200_000;
@@ -210,7 +213,7 @@ export async function runDomExtraction(args: ExtractDomInput, logger: Logger): P
       });
 
       const response = await page.goto(args.url, {
-        waitUntil: "networkidle0",
+        waitUntil: "networkidle2",
         timeout: EXTRACTION_TIMEOUT_MS,
       });
 
@@ -361,12 +364,12 @@ export async function runDomExtraction(args: ExtractDomInput, logger: Logger): P
       throw error;
     } finally {
       await telemetry.emitTelemetry("browser.closed", { tool: "extractDom" });
-      await browser.close();
+      await safeBrowserClose(browser, BROWSER_CLOSE_TIMEOUT_MS, logger);
     }
   };
   
-  // Wrap with retry logic
-  return withRetry(executeExtraction, {
+  // Wrap with retry logic and master timeout to prevent indefinite hangs
+  const retryPromise = withRetry(executeExtraction, {
     policy: retryPolicy,
     logger,
     context: "extractDom",
@@ -375,6 +378,8 @@ export async function runDomExtraction(args: ExtractDomInput, logger: Logger): P
     retryAttempts = result.retryAttempts || 0;
     return result;
   });
+
+  return withTimeout(retryPromise, MASTER_TIMEOUT_MS, "extractDom");
 }
 
 function resolveViewport(config?: ViewportConfig, logger?: Logger): ViewportPreset {
