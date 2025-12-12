@@ -9,6 +9,7 @@ import {
   resetPuppeteerMock,
   setGotoFailure,
   setScreenshotBuffer,
+  setWaitForSelectorFailure,
 } from "../helpers/puppeteerMock.js";
 import { registerCaptureScreenshotTool } from "../../src/tools/captureScreenshot.js";
 import { registerExtractDomTool } from "../../src/tools/extractDom.js";
@@ -236,6 +237,550 @@ describe("captureScreenshot tool", () => {
     // Should still capture screenshot but with scroll at 0,0
     expect(response.content[0].text).toContain("Scroll position: (0, 0)");
     expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("executes click actions before taking screenshot", async () => {
+    const logger = createLogger();
+    const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+    queueEvaluateResult({
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      scrollWidth: 1280,
+      scrollHeight: 1000,
+      scrollX: 0,
+      scrollY: 0,
+    });
+
+    const imageBuffer = Buffer.from("click-action-image");
+    setScreenshotBuffer(imageBuffer);
+
+    const response = await handler({
+      url: "https://example.com/modal",
+      fullPage: false,
+      clickActions: [
+        { selector: ".open-modal-btn" },
+      ],
+    });
+
+    expect(mockPage.waitForSelector).toHaveBeenCalledWith(".open-modal-btn", { timeout: 10000 });
+    expect(mockPage.click).toHaveBeenCalledWith(".open-modal-btn", {});
+    expect(response.content[0].text).toContain("Click actions executed: 1");
+    expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("executes multiple click actions in sequence", async () => {
+    const logger = createLogger();
+    const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+    queueEvaluateResult({
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      scrollWidth: 1280,
+      scrollHeight: 1000,
+      scrollX: 0,
+      scrollY: 0,
+    });
+
+    const imageBuffer = Buffer.from("multi-click-image");
+    setScreenshotBuffer(imageBuffer);
+
+    const response = await handler({
+      url: "https://example.com/carousel",
+      fullPage: false,
+      clickActions: [
+        { selector: ".carousel-next" },
+        { selector: ".carousel-next" },
+        { selector: ".carousel-next" },
+      ],
+    });
+
+    expect(mockPage.waitForSelector).toHaveBeenCalledTimes(3);
+    expect(mockPage.click).toHaveBeenCalledTimes(3);
+    expect(response.content[0].text).toContain("Click actions executed: 3");
+    expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles click action with delayBefore and delayAfter", async () => {
+    const logger = createLogger();
+    const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+    queueEvaluateResult({
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      scrollWidth: 1280,
+      scrollHeight: 1000,
+      scrollX: 0,
+      scrollY: 0,
+    });
+
+    const imageBuffer = Buffer.from("delay-click-image");
+    setScreenshotBuffer(imageBuffer);
+
+    const startTime = Date.now();
+    const response = await handler({
+      url: "https://example.com/animated",
+      fullPage: false,
+      clickActions: [
+        { selector: ".animated-btn", delayBefore: 50, delayAfter: 50 },
+      ],
+    });
+    const elapsed = Date.now() - startTime;
+
+    expect(mockPage.click).toHaveBeenCalledWith(".animated-btn", {});
+    expect(response.content[0].text).toContain("Click actions executed: 1");
+    // Should have waited at least 100ms (50ms before + 50ms after)
+    expect(elapsed).toBeGreaterThanOrEqual(90); // Allow some tolerance
+    expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles click action with waitForSelector after click", async () => {
+    const logger = createLogger();
+    const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+    queueEvaluateResult({
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      scrollWidth: 1280,
+      scrollHeight: 1000,
+      scrollX: 0,
+      scrollY: 0,
+    });
+
+    const imageBuffer = Buffer.from("wait-selector-image");
+    setScreenshotBuffer(imageBuffer);
+
+    const response = await handler({
+      url: "https://example.com/modal",
+      fullPage: false,
+      clickActions: [
+        { selector: ".open-modal-btn", waitForSelector: ".modal-content" },
+      ],
+    });
+
+    expect(mockPage.waitForSelector).toHaveBeenCalledWith(".open-modal-btn", { timeout: 10000 });
+    expect(mockPage.click).toHaveBeenCalledWith(".open-modal-btn", {});
+    expect(mockPage.waitForSelector).toHaveBeenCalledWith(".modal-content", { timeout: 10000 });
+    expect(response.content[0].text).toContain("Click actions executed: 1");
+    expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles click action with button and clickCount options", async () => {
+    const logger = createLogger();
+    const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+    queueEvaluateResult({
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      scrollWidth: 1280,
+      scrollHeight: 1000,
+      scrollX: 0,
+      scrollY: 0,
+    });
+
+    const imageBuffer = Buffer.from("double-click-image");
+    setScreenshotBuffer(imageBuffer);
+
+    const response = await handler({
+      url: "https://example.com/doubleclick",
+      fullPage: false,
+      clickActions: [
+        { selector: ".item", button: "left", clickCount: 2 },
+      ],
+    });
+
+    expect(mockPage.click).toHaveBeenCalledWith(".item", { button: "left", clickCount: 2 });
+    expect(response.content[0].text).toContain("Click actions executed: 1");
+    expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues with remaining click actions when one fails", async () => {
+    const logger = createLogger();
+    const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+    // Make the first selector fail
+    setWaitForSelectorFailure(".nonexistent-btn");
+
+    queueEvaluateResult({
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      scrollWidth: 1280,
+      scrollHeight: 1000,
+      scrollX: 0,
+      scrollY: 0,
+    });
+
+    const imageBuffer = Buffer.from("partial-click-image");
+    setScreenshotBuffer(imageBuffer);
+
+    const response = await handler({
+      url: "https://example.com/partial",
+      fullPage: false,
+      clickActions: [
+        { selector: ".nonexistent-btn" },
+        { selector: ".existing-btn" },
+      ],
+    });
+
+    // First action fails, second succeeds
+    expect(mockPage.click).toHaveBeenCalledTimes(1);
+    expect(mockPage.click).toHaveBeenCalledWith(".existing-btn", {});
+    expect(response.content[0].text).toContain("Click actions executed: 1");
+    expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not include click actions in metadata when none executed", async () => {
+    const logger = createLogger();
+    const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+    queueEvaluateResult({
+      viewportWidth: 1280,
+      viewportHeight: 720,
+      scrollWidth: 1280,
+      scrollHeight: 1000,
+      scrollX: 0,
+      scrollY: 0,
+    });
+
+    const imageBuffer = Buffer.from("no-click-image");
+    setScreenshotBuffer(imageBuffer);
+
+    const response = await handler({
+      url: "https://example.com/simple",
+      fullPage: false,
+    });
+
+    expect(mockPage.click).not.toHaveBeenCalled();
+    expect(response.content[0].text).not.toContain("Click actions executed");
+    expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+  });
+
+  // Steps-based action tests
+  describe("steps pattern", () => {
+    it("executes delay step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("delay-step-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const startTime = Date.now();
+      const response = await handler({
+        url: "https://example.com/delay",
+        fullPage: false,
+        steps: [
+          { type: "delay", duration: 100 },
+          { type: "screenshot" },
+        ],
+      });
+      const elapsed = Date.now() - startTime;
+
+      expect(elapsed).toBeGreaterThanOrEqual(90);
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes click step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("click-step-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/click",
+        fullPage: false,
+        steps: [
+          { type: "click", selector: ".btn" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.waitForSelector).toHaveBeenCalledWith(".btn", { timeout: 10000 });
+      expect(mockPage.click).toHaveBeenCalledWith(".btn", {});
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes scroll step with coordinates", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: scrollTo, then metrics
+      queueEvaluateResult(undefined);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 2000,
+        scrollHeight: 3000,
+        scrollX: 100,
+        scrollY: 500,
+      });
+
+      const imageBuffer = Buffer.from("scroll-step-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/scroll",
+        fullPage: false,
+        steps: [
+          { type: "scroll", x: 100, y: 500 },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes scroll step with selector", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: scrollIntoView, then metrics
+      queueEvaluateResult({ ok: true, x: 0, y: 800 });
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 2500,
+        scrollX: 0,
+        scrollY: 800,
+      });
+
+      const imageBuffer = Buffer.from("scroll-selector-step-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/scroll-selector",
+        fullPage: false,
+        steps: [
+          { type: "scroll", selector: "#section" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes waitForSelector step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("wait-step-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/wait",
+        fullPage: false,
+        steps: [
+          { type: "waitForSelector", selector: ".loaded" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.waitForSelector).toHaveBeenCalledWith(".loaded", { timeout: 10000 });
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes multiple steps in sequence", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: scroll, then metrics
+      queueEvaluateResult(undefined);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 2000,
+        scrollX: 0,
+        scrollY: 500,
+      });
+
+      const imageBuffer = Buffer.from("multi-step-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/multi",
+        fullPage: false,
+        steps: [
+          { type: "delay", duration: 50 },
+          { type: "click", selector: ".open-btn" },
+          { type: "waitForSelector", selector: ".modal" },
+          { type: "scroll", y: 500 },
+          { type: "screenshot" },
+          { type: "delay", duration: 50 },
+        ],
+      });
+
+      expect(mockPage.click).toHaveBeenCalledWith(".open-btn", {});
+      expect(mockPage.waitForSelector).toHaveBeenCalledWith(".modal", { timeout: 10000 });
+      expect(response.content[0].text).toContain("Steps executed: 6");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("takes screenshot automatically if no screenshot step is provided", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("auto-screenshot-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/auto",
+        fullPage: false,
+        steps: [
+          { type: "delay", duration: 50 },
+          { type: "click", selector: ".btn" },
+        ],
+      });
+
+      expect(mockPage.screenshot).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes click step with button and clickCount options", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("click-options-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/dblclick",
+        fullPage: false,
+        steps: [
+          { type: "click", selector: ".item", button: "left", clickCount: 2 },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.click).toHaveBeenCalledWith(".item", { button: "left", clickCount: 2 });
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("continues with remaining steps when one fails", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Make the first selector fail
+      setWaitForSelectorFailure(".nonexistent");
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("partial-steps-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/partial",
+        fullPage: false,
+        steps: [
+          { type: "click", selector: ".nonexistent" },
+          { type: "click", selector: ".existing" },
+          { type: "screenshot" },
+        ],
+      });
+
+      // First click fails, second succeeds
+      expect(mockPage.click).toHaveBeenCalledTimes(1);
+      expect(mockPage.click).toHaveBeenCalledWith(".existing", {});
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes screenshot step at specified position in steps", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("mid-screenshot-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/mid-screenshot",
+        fullPage: false,
+        steps: [
+          { type: "click", selector: ".before-btn" },
+          { type: "screenshot" },
+          { type: "click", selector: ".after-btn" },
+        ],
+      });
+
+      // Both clicks should execute
+      expect(mockPage.click).toHaveBeenCalledTimes(2);
+      expect(mockPage.click).toHaveBeenNthCalledWith(1, ".before-btn", {});
+      expect(mockPage.click).toHaveBeenNthCalledWith(2, ".after-btn", {});
+      expect(mockPage.screenshot).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 3");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

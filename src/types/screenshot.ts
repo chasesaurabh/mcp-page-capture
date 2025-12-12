@@ -37,6 +37,51 @@ export interface ScrollConfig {
   behavior?: "auto" | "smooth";
 }
 
+export interface ClickAction {
+  selector: string;
+  delayBefore?: number;
+  delayAfter?: number;
+  waitForSelector?: string;
+  waitForNavigation?: boolean;
+  button?: "left" | "right" | "middle";
+  clickCount?: number;
+}
+
+// Step-based action types
+export interface DelayStep {
+  type: "delay";
+  duration: number;
+}
+
+export interface ClickStep {
+  type: "click";
+  selector: string;
+  button?: "left" | "right" | "middle";
+  clickCount?: number;
+  waitForSelector?: string;
+  waitForNavigation?: boolean;
+}
+
+export interface ScrollStep {
+  type: "scroll";
+  x?: number;
+  y?: number;
+  selector?: string;
+  behavior?: "auto" | "smooth";
+}
+
+export interface WaitForSelectorStep {
+  type: "waitForSelector";
+  selector: string;
+  timeout?: number;
+}
+
+export interface ScreenshotStep {
+  type: "screenshot";
+}
+
+export type ActionStep = DelayStep | ClickStep | ScrollStep | WaitForSelectorStep | ScreenshotStep;
+
 export interface CaptureScreenshotInput {
   url: string;
   fullPage?: boolean;
@@ -46,6 +91,8 @@ export interface CaptureScreenshotInput {
   retryPolicy?: RetryConfig;
   storageTarget?: string;
   scroll?: ScrollConfig;
+  clickActions?: ClickAction[];
+  steps?: ActionStep[];
 }
 
 export interface ScreenshotMetadata {
@@ -62,6 +109,8 @@ export interface ScreenshotMetadata {
   viewportPreset?: string;
   retryAttempts?: number;
   storageLocation?: string;
+  clickActionsExecuted?: number;
+  stepsExecuted?: number;
 }
 
 export interface CaptureScreenshotResult {

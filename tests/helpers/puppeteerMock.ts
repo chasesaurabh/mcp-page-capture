@@ -6,6 +6,10 @@ type GotoImplementation = (url: string, options: Record<string, unknown>) => Pro
 
 const evaluateQueue: EvaluateResult[] = [];
 
+let waitForSelectorImpl: (selector: string, options?: any) => Promise<any> = async () => ({});
+let clickImpl: (selector: string, options?: any) => Promise<void> = async () => undefined;
+let waitForNavigationImpl: (options?: any) => Promise<any> = async () => ({});
+
 const mockPage = {
   setViewport: vi.fn(async () => undefined),
   setDefaultNavigationTimeout: vi.fn(async () => undefined),
@@ -20,6 +24,11 @@ const mockPage = {
     const next = evaluateQueue.shift()!;
     return typeof next === "function" ? next(pageFunction, params) : next;
   }),
+  click: vi.fn(async (selector: string, options?: any) => clickImpl(selector, options)),
+  waitForSelector: vi.fn(async (selector: string, options?: any) => waitForSelectorImpl(selector, options)),
+  waitForNavigation: vi.fn(async (options?: any) => waitForNavigationImpl(options)),
+  setUserAgent: vi.fn(async () => undefined),
+  evaluateOnNewDocument: vi.fn(async () => undefined),
 };
 
 const mockBrowser = {
@@ -70,6 +79,27 @@ export function setGotoFailure(status = 500) {
   }));
 }
 
+export function setWaitForSelectorImpl(impl: (selector: string, options?: any) => Promise<any>) {
+  waitForSelectorImpl = impl;
+}
+
+export function setClickImpl(impl: (selector: string, options?: any) => Promise<void>) {
+  clickImpl = impl;
+}
+
+export function setWaitForNavigationImpl(impl: (options?: any) => Promise<any>) {
+  waitForNavigationImpl = impl;
+}
+
+export function setWaitForSelectorFailure(selector: string) {
+  waitForSelectorImpl = async (sel: string) => {
+    if (sel === selector) {
+      throw new Error(`Waiting for selector \`${selector}\` failed: timeout`);
+    }
+    return {};
+  };
+}
+
 export function resetPuppeteerMock() {
   launchMock.mockClear();
   mockBrowser.newPage.mockClear();
@@ -81,9 +111,17 @@ export function resetPuppeteerMock() {
   mockPage.goto.mockClear();
   mockPage.screenshot.mockClear();
   mockPage.evaluate.mockClear();
+  mockPage.click.mockClear();
+  mockPage.waitForSelector.mockClear();
+  mockPage.waitForNavigation.mockClear();
+  mockPage.setUserAgent.mockClear();
+  mockPage.evaluateOnNewDocument.mockClear();
   evaluateQueue.length = 0;
   screenshotBuffer = Buffer.from("mock-image");
   setGotoSuccess();
+  waitForSelectorImpl = async () => ({});
+  clickImpl = async () => undefined;
+  waitForNavigationImpl = async () => ({});
 }
 
 export { launchMock, mockBrowser, mockPage };

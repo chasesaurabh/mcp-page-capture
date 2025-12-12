@@ -21,14 +21,16 @@ const MAX_TEXT_CHARS = 100_000;
 
 const headersSchema = z
   .record(z.string().min(1, "Header names cannot be empty."), z.string().min(1, "Header values cannot be empty."))
-  .optional();
+  .optional()
+  .describe("Custom HTTP headers to send with the request.");
 
 const cookieSchema = z.object({
-  name: z.string({ required_error: "Cookie name is required." }).min(1, "Cookie name cannot be empty."),
-  value: z.string({ required_error: "Cookie value is required." }),
+  name: z.string({ required_error: "Cookie name is required." }).min(1, "Cookie name cannot be empty.").describe("The name of the cookie."),
+  value: z.string({ required_error: "Cookie value is required." }).describe("The value of the cookie."),
   url: z
     .string()
     .optional()
+    .describe("The URL to associate with the cookie. If omitted, the target URL is used.")
     .transform((value, ctx) => {
       if (!value) return value;
       try {
@@ -41,38 +43,39 @@ const cookieSchema = z.object({
         return z.NEVER;
       }
     }),
-  domain: z.string().optional(),
-  path: z.string().optional(),
-  secure: z.boolean().optional(),
-  httpOnly: z.boolean().optional(),
-  sameSite: z.enum(["Strict", "Lax", "None"]).optional(),
-  expires: z.number().optional(),
-});
+  domain: z.string().optional().describe("The domain the cookie applies to."),
+  path: z.string().optional().describe("The path the cookie applies to."),
+  secure: z.boolean().optional().describe("Whether the cookie is secure (HTTPS only)."),
+  httpOnly: z.boolean().optional().describe("Whether the cookie is HTTP-only (not accessible via JavaScript)."),
+  sameSite: z.enum(["Strict", "Lax", "None"]).optional().describe("The SameSite attribute of the cookie."),
+  expires: z.number().optional().describe("Unix timestamp (in seconds) when the cookie expires."),
+}).describe("A cookie to set before loading the page.");
 
 const viewportSchema = z.object({
-  preset: z.string().optional(),
-  width: z.number().positive().optional(),
-  height: z.number().positive().optional(),
-  deviceScaleFactor: z.number().positive().optional(),
-  isMobile: z.boolean().optional(),
-  hasTouch: z.boolean().optional(),
-  isLandscape: z.boolean().optional(),
-  userAgent: z.string().optional(),
-}).optional();
+  preset: z.string().optional().describe("Device preset name (e.g., 'iphone-14', 'desktop-hd', 'ipad-pro')."),
+  width: z.number().positive().optional().describe("Viewport width in pixels. Overrides preset width if specified."),
+  height: z.number().positive().optional().describe("Viewport height in pixels. Overrides preset height if specified."),
+  deviceScaleFactor: z.number().positive().optional().describe("Device scale factor (DPR). Defaults to 1."),
+  isMobile: z.boolean().optional().describe("Whether to emulate a mobile device."),
+  hasTouch: z.boolean().optional().describe("Whether the device supports touch events."),
+  isLandscape: z.boolean().optional().describe("Whether the viewport is in landscape orientation."),
+  userAgent: z.string().optional().describe("Custom User-Agent string to use."),
+}).optional().describe("Viewport configuration or device preset for rendering.");
 
 const retryPolicySchema = z.object({
-  maxRetries: z.number().min(0).max(10).optional(),
-  initialDelayMs: z.number().positive().optional(),
-  maxDelayMs: z.number().positive().optional(),
-  backoffMultiplier: z.number().min(1).optional(),
-  retryableStatusCodes: z.array(z.number()).optional(),
-  retryableErrors: z.array(z.string()).optional(),
-}).optional();
+  maxRetries: z.number().min(0).max(10).optional().describe("Maximum number of retry attempts (0-10). Defaults to 3."),
+  initialDelayMs: z.number().positive().optional().describe("Initial delay in milliseconds before the first retry."),
+  maxDelayMs: z.number().positive().optional().describe("Maximum delay in milliseconds between retries."),
+  backoffMultiplier: z.number().min(1).optional().describe("Multiplier for exponential backoff (e.g., 2 doubles delay each retry)."),
+  retryableStatusCodes: z.array(z.number()).optional().describe("HTTP status codes that should trigger a retry (e.g., [429, 503])."),
+  retryableErrors: z.array(z.string()).optional().describe("Error message patterns that should trigger a retry."),
+}).optional().describe("Retry policy configuration for handling transient failures.");
 
 const extractDomSchema = z.object({
   url: z
     .string({ required_error: "URL is required." })
     .min(1, "URL cannot be empty.")
+    .describe("The URL of the webpage to extract DOM from.")
     .transform((value: string, ctx: z.RefinementCtx) => {
       try {
         return normalizeUrl(value);
@@ -84,12 +87,12 @@ const extractDomSchema = z.object({
         return z.NEVER;
       }
     }),
-  selector: z.string().min(1, "Selector cannot be empty.").optional(),
+  selector: z.string().min(1, "Selector cannot be empty.").optional().describe("CSS selector to extract a specific element. If omitted, extracts the entire document."),
   headers: headersSchema,
-  cookies: z.array(cookieSchema).optional(),
+  cookies: z.array(cookieSchema).optional().describe("Cookies to set before loading the page."),
   viewport: viewportSchema,
   retryPolicy: retryPolicySchema,
-  storageTarget: z.string().optional(),
+  storageTarget: z.string().optional().describe("Storage target identifier for persisting the extracted DOM."),
 });
 
 export function registerExtractDomTool(server: McpServer, logger: Logger) {
