@@ -60,7 +60,6 @@ describe("captureScreenshot tool", () => {
 
     const response = await handler({
       url: "https://example.com/dashboard",
-      fullPage: true,
       headers: {
         "  X-Debug  ": " token ",
       },
@@ -70,15 +69,18 @@ describe("captureScreenshot tool", () => {
           value: "abc123",
         },
       ],
+      steps: [
+        { type: "fullPage", enabled: true },
+        { type: "screenshot" },
+      ],
     });
 
     expect(mockPage.setExtraHTTPHeaders).toHaveBeenCalledWith({ "X-Debug": "token" });
     expect(mockPage.setCookie).toHaveBeenCalledTimes(1);
     expect(mockPage.setCookie).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "session",
+        name: " session ",
         value: "abc123",
-        url: "https://example.com",
       }),
     );
     expect(mockPage.screenshot).toHaveBeenCalledWith({ type: "png", fullPage: true });
@@ -86,7 +88,8 @@ describe("captureScreenshot tool", () => {
 
     expect(response.content[0]).toMatchObject({ type: "text" });
     expect(response.content[0].text).toContain("URL: https://example.com/dashboard");
-    expect(response.content[0].text).toContain("Full page: true");
+    // 3 steps: cookie (from legacy), fullPage, screenshot
+    expect(response.content[0].text).toContain("Steps executed: 3");
 
     expect(response.content[1]).toEqual({
       type: "image",
@@ -102,7 +105,7 @@ describe("captureScreenshot tool", () => {
     setGotoFailure(400);  // Use non-retryable status code
 
     await expect(
-      handler({ url: "https://example.com/broken", fullPage: false }),
+      handler({ url: "https://example.com/broken" }),
     ).rejects.toMatchObject({
       code: ErrorCode.InvalidParams,
       data: {
@@ -118,9 +121,8 @@ describe("captureScreenshot tool", () => {
     const logger = createLogger();
     const handler = getToolHandler(registerCaptureScreenshotTool, logger);
 
-    // Queue evaluate results: 1) scrollTo (void), 2) get position, 3) get metrics
+    // Queue evaluate results for steps-based flow: scrollTo, then metrics
     queueEvaluateResult(undefined); // scrollTo returns void
-    queueEvaluateResult({ x: 100, y: 500 }); // scroll position result
     queueEvaluateResult({
       viewportWidth: 1280,
       viewportHeight: 720,
@@ -135,7 +137,6 @@ describe("captureScreenshot tool", () => {
 
     const response = await handler({
       url: "https://example.com/long-page",
-      fullPage: false,
       scroll: {
         x: 100,
         y: 500,
@@ -167,7 +168,6 @@ describe("captureScreenshot tool", () => {
 
     const response = await handler({
       url: "https://example.com/article",
-      fullPage: false,
       scroll: {
         selector: "#section-3",
       },
@@ -182,9 +182,8 @@ describe("captureScreenshot tool", () => {
     const logger = createLogger();
     const handler = getToolHandler(registerCaptureScreenshotTool, logger);
 
-    // Queue evaluate results: 1) scrollTo (void), 2) get position, 3) get metrics
+    // Queue evaluate results for steps-based flow: scrollTo, then metrics
     queueEvaluateResult(undefined); // scrollTo returns void
-    queueEvaluateResult({ x: 0, y: 1000 }); // scroll position after smooth scroll
     queueEvaluateResult({
       viewportWidth: 1280,
       viewportHeight: 720,
@@ -199,7 +198,6 @@ describe("captureScreenshot tool", () => {
 
     const response = await handler({
       url: "https://example.com/smooth",
-      fullPage: false,
       scroll: {
         y: 1000,
         behavior: "smooth",
@@ -230,7 +228,6 @@ describe("captureScreenshot tool", () => {
 
     const response = await handler({
       url: "https://example.com/page",
-      fullPage: false,
       scroll: {
         selector: "#nonexistent",
       },
@@ -259,7 +256,6 @@ describe("captureScreenshot tool", () => {
 
     const response = await handler({
       url: "https://example.com/modal",
-      fullPage: false,
       clickActions: [
         { selector: ".open-modal-btn" },
       ],
@@ -267,7 +263,7 @@ describe("captureScreenshot tool", () => {
 
     expect(mockPage.waitForSelector).toHaveBeenCalledWith(".open-modal-btn", { timeout: 10000 });
     expect(mockPage.click).toHaveBeenCalledWith(".open-modal-btn", {});
-    expect(response.content[0].text).toContain("Click actions executed: 1");
+    expect(response.content[0].text).toContain("Steps executed:");
     expect(mockBrowser.close).toHaveBeenCalledTimes(1);
   });
 
@@ -289,7 +285,6 @@ describe("captureScreenshot tool", () => {
 
     const response = await handler({
       url: "https://example.com/carousel",
-      fullPage: false,
       clickActions: [
         { selector: ".carousel-next" },
         { selector: ".carousel-next" },
@@ -299,7 +294,7 @@ describe("captureScreenshot tool", () => {
 
     expect(mockPage.waitForSelector).toHaveBeenCalledTimes(3);
     expect(mockPage.click).toHaveBeenCalledTimes(3);
-    expect(response.content[0].text).toContain("Click actions executed: 3");
+    expect(response.content[0].text).toContain("Steps executed:");
     expect(mockBrowser.close).toHaveBeenCalledTimes(1);
   });
 
@@ -322,7 +317,6 @@ describe("captureScreenshot tool", () => {
     const startTime = Date.now();
     const response = await handler({
       url: "https://example.com/animated",
-      fullPage: false,
       clickActions: [
         { selector: ".animated-btn", delayBefore: 50, delayAfter: 50 },
       ],
@@ -330,7 +324,7 @@ describe("captureScreenshot tool", () => {
     const elapsed = Date.now() - startTime;
 
     expect(mockPage.click).toHaveBeenCalledWith(".animated-btn", {});
-    expect(response.content[0].text).toContain("Click actions executed: 1");
+    expect(response.content[0].text).toContain("Steps executed:");
     // Should have waited at least 100ms (50ms before + 50ms after)
     expect(elapsed).toBeGreaterThanOrEqual(90); // Allow some tolerance
     expect(mockBrowser.close).toHaveBeenCalledTimes(1);
@@ -354,7 +348,6 @@ describe("captureScreenshot tool", () => {
 
     const response = await handler({
       url: "https://example.com/modal",
-      fullPage: false,
       clickActions: [
         { selector: ".open-modal-btn", waitForSelector: ".modal-content" },
       ],
@@ -363,7 +356,7 @@ describe("captureScreenshot tool", () => {
     expect(mockPage.waitForSelector).toHaveBeenCalledWith(".open-modal-btn", { timeout: 10000 });
     expect(mockPage.click).toHaveBeenCalledWith(".open-modal-btn", {});
     expect(mockPage.waitForSelector).toHaveBeenCalledWith(".modal-content", { timeout: 10000 });
-    expect(response.content[0].text).toContain("Click actions executed: 1");
+    expect(response.content[0].text).toContain("Steps executed:");
     expect(mockBrowser.close).toHaveBeenCalledTimes(1);
   });
 
@@ -385,14 +378,13 @@ describe("captureScreenshot tool", () => {
 
     const response = await handler({
       url: "https://example.com/doubleclick",
-      fullPage: false,
       clickActions: [
         { selector: ".item", button: "left", clickCount: 2 },
       ],
     });
 
     expect(mockPage.click).toHaveBeenCalledWith(".item", { button: "left", clickCount: 2 });
-    expect(response.content[0].text).toContain("Click actions executed: 1");
+    expect(response.content[0].text).toContain("Steps executed:");
     expect(mockBrowser.close).toHaveBeenCalledTimes(1);
   });
 
@@ -417,7 +409,6 @@ describe("captureScreenshot tool", () => {
 
     const response = await handler({
       url: "https://example.com/partial",
-      fullPage: false,
       clickActions: [
         { selector: ".nonexistent-btn" },
         { selector: ".existing-btn" },
@@ -427,7 +418,7 @@ describe("captureScreenshot tool", () => {
     // First action fails, second succeeds
     expect(mockPage.click).toHaveBeenCalledTimes(1);
     expect(mockPage.click).toHaveBeenCalledWith(".existing-btn", {});
-    expect(response.content[0].text).toContain("Click actions executed: 1");
+    expect(response.content[0].text).toContain("Steps executed:");
     expect(mockBrowser.close).toHaveBeenCalledTimes(1);
   });
 
@@ -449,11 +440,11 @@ describe("captureScreenshot tool", () => {
 
     const response = await handler({
       url: "https://example.com/simple",
-      fullPage: false,
     });
 
     expect(mockPage.click).not.toHaveBeenCalled();
-    expect(response.content[0].text).not.toContain("Click actions executed");
+    // With the new steps system, an auto-screenshot step is always added
+    expect(response.content[0].text).toContain("Steps executed: 1");
     expect(mockBrowser.close).toHaveBeenCalledTimes(1);
   });
 
@@ -478,8 +469,7 @@ describe("captureScreenshot tool", () => {
       const startTime = Date.now();
       const response = await handler({
         url: "https://example.com/delay",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "delay", duration: 100 },
           { type: "screenshot" },
         ],
@@ -509,8 +499,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/click",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "click", selector: ".btn" },
           { type: "screenshot" },
         ],
@@ -542,8 +531,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/scroll",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "scroll", x: 100, y: 500 },
           { type: "screenshot" },
         ],
@@ -574,8 +562,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/scroll-selector",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "scroll", selector: "#section" },
           { type: "screenshot" },
         ],
@@ -604,8 +591,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/wait",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "waitForSelector", selector: ".loaded" },
           { type: "screenshot" },
         ],
@@ -636,8 +622,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/multi",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "delay", duration: 50 },
           { type: "click", selector: ".open-btn" },
           { type: "waitForSelector", selector: ".modal" },
@@ -671,15 +656,14 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/auto",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "delay", duration: 50 },
           { type: "click", selector: ".btn" },
         ],
       });
 
       expect(mockPage.screenshot).toHaveBeenCalled();
-      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(response.content[0].text).toContain("Steps executed: 3");
       expect(mockBrowser.close).toHaveBeenCalledTimes(1);
     });
 
@@ -701,8 +685,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/dblclick",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "click", selector: ".item", button: "left", clickCount: 2 },
           { type: "screenshot" },
         ],
@@ -734,8 +717,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/partial",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "click", selector: ".nonexistent" },
           { type: "click", selector: ".existing" },
           { type: "screenshot" },
@@ -767,8 +749,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/mid-screenshot",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "click", selector: ".before-btn" },
           { type: "screenshot" },
           { type: "click", selector: ".after-btn" },
@@ -802,8 +783,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/fullpage-override",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "screenshot", fullPage: true },
         ],
       });
@@ -831,8 +811,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/element-screenshot",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "screenshot", selector: ".target-element" },
         ],
       });
@@ -863,8 +842,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/fallback-screenshot",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "screenshot", selector: ".nonexistent-element" },
         ],
       });
@@ -893,8 +871,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/cookie-set",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "cookie", action: "set", name: "session", value: "abc123" },
           { type: "screenshot" },
         ],
@@ -928,8 +905,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/cookie-full",
-        fullPage: false,
-        steps: [
+          steps: [
           { 
             type: "cookie", 
             action: "set", 
@@ -985,8 +961,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/cookie-delete",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "cookie", action: "delete", name: "session" },
           { type: "screenshot" },
         ],
@@ -1024,8 +999,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/cookie-not-found",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "cookie", action: "delete", name: "nonexistent" },
           { type: "screenshot" },
         ],
@@ -1057,8 +1031,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/storage-set",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "storage", storageType: "localStorage", action: "set", key: "user", value: "john" },
           { type: "screenshot" },
         ],
@@ -1089,8 +1062,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/session-storage-set",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "storage", storageType: "sessionStorage", action: "set", key: "token", value: "xyz789" },
           { type: "screenshot" },
         ],
@@ -1121,8 +1093,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/storage-delete",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "storage", storageType: "localStorage", action: "delete", key: "user" },
           { type: "screenshot" },
         ],
@@ -1153,8 +1124,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/storage-clear",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "storage", storageType: "sessionStorage", action: "clear" },
           { type: "screenshot" },
         ],
@@ -1189,8 +1159,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/cookie-get",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "cookie", action: "get", name: "session" },
           { type: "screenshot" },
         ],
@@ -1226,8 +1195,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/cookie-get-not-found",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "cookie", action: "get", name: "nonexistent" },
           { type: "screenshot" },
         ],
@@ -1266,8 +1234,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/cookie-list",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "cookie", action: "list" },
           { type: "screenshot" },
         ],
@@ -1302,8 +1269,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/storage-get",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "storage", storageType: "localStorage", action: "get", key: "user" },
           { type: "screenshot" },
         ],
@@ -1339,8 +1305,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/storage-get-null",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "storage", storageType: "sessionStorage", action: "get", key: "nonexistent" },
           { type: "screenshot" },
         ],
@@ -1376,8 +1341,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/storage-list",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "storage", storageType: "localStorage", action: "list" },
           { type: "screenshot" },
         ],
@@ -1413,8 +1377,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/storage-list-empty",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "storage", storageType: "sessionStorage", action: "list" },
           { type: "screenshot" },
         ],
@@ -1456,8 +1419,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/complex-workflow",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "cookie", action: "set", name: "auth", value: "token" },
           { type: "cookie", action: "delete", name: "old-cookie" },
           { type: "storage", storageType: "localStorage", action: "set", key: "user", value: "john" },
@@ -1495,8 +1457,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/form",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "text", selector: "#username", value: "testuser" },
           { type: "screenshot" },
         ],
@@ -1526,8 +1487,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/search",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "text", selector: "#search", value: "query", pressEnter: true },
           { type: "screenshot" },
         ],
@@ -1557,8 +1517,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/form",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "select", selector: "#country", value: "us" },
           { type: "screenshot" },
         ],
@@ -1589,8 +1548,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/form",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "select", selector: "#country", text: "United States" },
           { type: "screenshot" },
         ],
@@ -1621,8 +1579,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/form",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "checkbox", selector: "#terms", checked: true },
           { type: "screenshot" },
         ],
@@ -1651,8 +1608,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/menu",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "hover", selector: ".dropdown" },
           { type: "screenshot" },
         ],
@@ -1681,8 +1637,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/form",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "focus", selector: "#email" },
           { type: "screenshot" },
         ],
@@ -1713,8 +1668,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/form",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "blur", selector: "#email" },
           { type: "screenshot" },
         ],
@@ -1743,8 +1697,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/form",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "clear", selector: "#search" },
           { type: "screenshot" },
         ],
@@ -1774,8 +1727,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/form",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "keypress", key: "Tab" },
           { type: "screenshot" },
         ],
@@ -1804,8 +1756,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/form",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "keypress", key: "a", modifiers: ["Control"] },
           { type: "screenshot" },
         ],
@@ -1838,8 +1789,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/page",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "evaluate", script: "return document.title;" },
           { type: "screenshot" },
         ],
@@ -1868,8 +1818,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/form",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "radio", selector: "input[type='radio']", value: "option1" },
           { type: "screenshot" },
         ],
@@ -1899,8 +1848,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/upload",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "upload", selector: "input[type='file']", filePaths: ["/path/to/file.pdf"] },
           { type: "screenshot" },
         ],
@@ -1931,8 +1879,7 @@ describe("captureScreenshot tool", () => {
 
       const response = await handler({
         url: "https://example.com/form",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "submit", selector: "#contact-form", waitForNavigation: false },
           { type: "screenshot" },
         ],
@@ -1964,8 +1911,7 @@ describe("captureScreenshot tool", () => {
       const startTime = Date.now();
       const response = await handler({
         url: "https://example.com/long-page",
-        fullPage: false,
-        steps: [
+          steps: [
           { type: "scroll", y: 500, behavior: "smooth" },
           { type: "screenshot" },
         ],

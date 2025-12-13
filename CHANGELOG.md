@@ -1,21 +1,3 @@
-## 1.2.0 (2025-11-29)
-
-* chore(release): 1.0.0 ([8f541d5](https://github.com/chasesaurabh/mcp-page-capture/commit/8f541d5))
-* feat: document release triggers ([cf3eeca](https://github.com/chasesaurabh/mcp-page-capture/commit/cf3eeca))
-* Add release automation with semantic-release and GitHub Actions ([c528732](https://github.com/chasesaurabh/mcp-page-capture/commit/c528732))
-
-## 1.0.0 (2025-11-29)
-
-* feat: document release triggers ([cf3eeca](https://github.com/chasesaurabh/mcp-page-capture/commit/cf3eeca))
-* Add DOM extraction functionality with support for optional CSS selectors and HTTP headers ([4480ce8](https://github.com/chasesaurabh/mcp-page-capture/commit/4480ce8))
-* Add release automation with semantic-release and GitHub Actions ([c528732](https://github.com/chasesaurabh/mcp-page-capture/commit/c528732))
-* Add support for headers and cookies in screenshot capture functionality ([8fc52c4](https://github.com/chasesaurabh/mcp-page-capture/commit/8fc52c4))
-* Add Vitest for testing framework and implement integration tests for tools ([99b5aea](https://github.com/chasesaurabh/mcp-page-capture/commit/99b5aea))
-* Fix server name in createPageCaptureServer function to match repository name ([b821de6](https://github.com/chasesaurabh/mcp-page-capture/commit/b821de6))
-* Initialized mcp-page-capture project with screenshot capture functionality ([6a28e03](https://github.com/chasesaurabh/mcp-page-capture/commit/6a28e03))
-* Prepare npm package for release ([d9ba55f](https://github.com/chasesaurabh/mcp-page-capture/commit/d9ba55f))
-* Update version to 1.1.0 and add changelog entries for new features ([11065ea](https://github.com/chasesaurabh/mcp-page-capture/commit/11065ea))
-
 # Changelog
 
 All notable changes to this project will be documented in this file following [Semantic Versioning](https://semver.org/).
@@ -23,26 +5,38 @@ All notable changes to this project will be documented in this file following [S
 ## [Unreleased]
 
 ### Added
-- **Advanced Viewport Presets**: Added comprehensive viewport presets for desktop (FHD, HD, 4K, MacBook Pro), tablets (iPad Pro, iPad, Surface Pro), and mobile devices (iPhone 14 Pro Max/Pro, iPhone SE, Pixel 7 Pro, Galaxy S23 Ultra) with proper user agents and device emulation
-- **Automatic Retry Logic**: Implemented automatic retry with exponential backoff for transient failures (HTTP 5xx, timeouts, DNS errors) with configurable retry policies
-- **Telemetry System**: Added comprehensive telemetry hooks with event emitter for monitoring tool invocations, navigation events, retries, and browser lifecycle with support for HTTP sink and custom handlers
-- **Pluggable Storage Backends**: Introduced abstraction for storage targets with implementations for local filesystem, S3-compatible storage (placeholder), and in-memory storage
-- **Docker Multi-Platform Support**: Updated Docker build to support multi-platform images (linux/amd64, linux/arm64) with automated publishing to Docker Hub and GitHub Container Registry
-- **Enhanced Tool Options**: Extended `captureScreenshot` and `extractDom` tools with viewport configuration, retry policies, and storage target selection
-- **Non-root Docker User**: Improved security by running container as non-root user with proper volume mounts
-- **Health Checks**: Added Docker health check for container monitoring
-- **GitHub Actions Enhancements**: Extended CI/CD pipeline to automatically build and publish Docker images on releases
+- **Unified Steps API**: Comprehensive step-based automation system supporting 21+ step types for complex page interactions
+- **Input Action Steps**: Added text input, select, radio, checkbox, hover, focus, blur, clear, file upload, form submit, and keypress steps ([ec6306d](https://github.com/chasesaurabh/mcp-page-capture/commit/ec6306d))
+- **Cookie & Storage Management Steps**: Runtime cookie operations (set, delete, get, list) and localStorage/sessionStorage management via steps ([385812b](https://github.com/chasesaurabh/mcp-page-capture/commit/385812b))
+- **Master Timeout Protection**: Added 60-second master timeout and safe browser cleanup to prevent indefinite hangs ([9f58991](https://github.com/chasesaurabh/mcp-page-capture/commit/9f58991))
+- **Advanced Viewport Presets**: Comprehensive viewport presets for desktop (FHD, HD, 4K, MacBook Pro), tablets (iPad Pro, iPad, Surface Pro), and mobile devices (iPhone 14 Pro Max/Pro, iPhone SE, Pixel 7 Pro, Galaxy S23 Ultra) with proper user agents and device emulation ([3195836](https://github.com/chasesaurabh/mcp-page-capture/commit/3195836))
+- **Automatic Retry Logic**: Retry with exponential backoff for transient failures (HTTP 5xx, timeouts, DNS errors) with configurable policies ([3195836](https://github.com/chasesaurabh/mcp-page-capture/commit/3195836))
+- **Telemetry System**: Telemetry hooks with event emitter for monitoring tool invocations, navigation events, retries, and browser lifecycle ([3195836](https://github.com/chasesaurabh/mcp-page-capture/commit/3195836))
+- **Pluggable Storage Backends**: Storage abstraction with local filesystem, S3-compatible (placeholder), and in-memory implementations ([3195836](https://github.com/chasesaurabh/mcp-page-capture/commit/3195836))
+- **Docker Multi-Platform Support**: Multi-platform images (linux/amd64, linux/arm64) with automated publishing ([3195836](https://github.com/chasesaurabh/mcp-page-capture/commit/3195836))
+- **Comprehensive Unit Tests**: Added tests for logger, request options, retry, telemetry, URL utilities ([7f88b4c](https://github.com/chasesaurabh/mcp-page-capture/commit/7f88b4c))
 
 ### Changed
+- **Consolidated Tool Actions**: Unified legacy parameters (viewport, cookies, scroll, clickActions) into the steps system for cleaner API ([76fa9d5](https://github.com/chasesaurabh/mcp-page-capture/commit/76fa9d5))
 - Refactored Puppeteer launch logic to be DRY and support viewport emulation
-- Updated tool schemas with Zod validation for new configuration options
+- Updated tool schemas with Zod validation for new step types
 - Enhanced error handling with retry context and telemetry integration
 - Improved Dockerfile with multi-stage build optimizations and security best practices
+
+### Deprecated
+- **`fullPage` top-level parameter**: Use `{ type: "fullPage", enabled: true }` step instead
 
 ### Fixed
 - Added proper viewport and user agent handling for mobile device emulation
 - Improved error messages to include retry attempt information
 - Fixed TypeScript compilation issues with proper type exports
+- Added safe browser cleanup with timeout to prevent process hangs
+
+## [1.2.0] - 2025-11-29
+
+* chore(release): 1.0.0 ([8f541d5](https://github.com/chasesaurabh/mcp-page-capture/commit/8f541d5))
+* feat: document release triggers ([cf3eeca](https://github.com/chasesaurabh/mcp-page-capture/commit/cf3eeca))
+* Add release automation with semantic-release and GitHub Actions ([c528732](https://github.com/chasesaurabh/mcp-page-capture/commit/c528732))
 
 ## [1.1.0] - 2025-11-26
 ### Added

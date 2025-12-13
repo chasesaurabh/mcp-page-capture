@@ -278,8 +278,6 @@ export interface CaptureScreenshotInput {
   storageTarget?: string;
   steps?: ActionStep[];
   // Legacy parameters - will be converted to steps internally
-  /** @deprecated Use steps with type 'fullPage' instead */
-  fullPage?: boolean;
   /** @deprecated Use steps with type 'cookie' instead */
   cookies?: CaptureCookieInput[];
   /** @deprecated Use steps with type 'viewport' instead */

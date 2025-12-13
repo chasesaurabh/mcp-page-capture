@@ -235,7 +235,6 @@ await startMcpPageCaptureServer();
 ### Legacy Parameter Support
 
 For backward compatibility, the following parameters are still supported but deprecated:
-- `fullPage` - Use `{ type: "fullPage", enabled: true }` step instead
 - `cookies` - Use `{ type: "cookie", action: "set", ... }` steps instead  
 - `viewport` - Use `{ type: "viewport", ... }` step instead
 - `scroll` - Use `{ type: "scroll", ... }` step instead
@@ -261,7 +260,6 @@ For backward compatibility, the following parameters are still supported but dep
 
 ### `captureScreenshot`
 - `url` (string, required): Fully-qualified URL to capture
-- `fullPage` (boolean, optional, default `false`): Capture the entire scrollable page instead of the current viewport
 - `headers` (object, optional): Key/value map of HTTP headers to send with the initial page navigation
 - `cookies` (array, optional): List of cookies to set before navigation. Each cookie supports `name`, `value`, and optional `url`, `domain`, `path`, `secure`, `httpOnly`, `sameSite`, and `expires` (Unix timestamp, seconds)
 - `viewport` (object, optional): Viewport configuration

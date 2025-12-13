@@ -87,13 +87,17 @@ describe("captureScreenshot consolidation", () => {
       expect(expectedViewportStep.preset).toBe("iphone-14");
     });
 
-    it("should convert fullPage parameter to fullPage step", () => {
+    it("should create fullPage step directly", () => {
+      // fullPage is now only available as a step, not a top-level parameter
       const input = {
         url: "https://example.com",
-        fullPage: true,
+        steps: [
+          { type: "fullPage" as const, enabled: true },
+          { type: "screenshot" as const },
+        ],
       };
 
-      // Expected: fullPage should be converted to a fullPage step
+      // Expected: fullPage step structure
       const expectedFullPageStep: FullPageStep = {
         type: "fullPage",
         enabled: true,
@@ -101,6 +105,7 @@ describe("captureScreenshot consolidation", () => {
 
       expect(expectedFullPageStep.type).toBe("fullPage");
       expect(expectedFullPageStep.enabled).toBe(true);
+      expect(input.steps[0].type).toBe("fullPage");
     });
 
     it("should convert cookies parameter to cookie steps", () => {
@@ -285,7 +290,6 @@ describe("captureScreenshot consolidation", () => {
     it("should support both legacy parameters and new steps format", () => {
       const legacyInput = {
         url: "https://example.com",
-        fullPage: true,
         viewport: { width: 1920, height: 1080 },
         cookies: [{ name: "session", value: "abc" }],
         scroll: { y: 500 },
@@ -308,21 +312,23 @@ describe("captureScreenshot consolidation", () => {
       expect(legacyInput.url).toBeDefined();
       expect(newInput.url).toBeDefined();
       expect(newInput.steps).toHaveLength(6);
+      // Legacy input no longer has fullPage - it's only available as a step
     });
 
     it("should merge legacy parameters with explicit steps", () => {
       const mixedInput = {
         url: "https://example.com",
-        fullPage: true, // Legacy parameter
+        viewport: { width: 1920, height: 1080 }, // Legacy parameter
         steps: [
+          { type: "fullPage" as const, enabled: true }, // fullPage now as step
           { type: "click" as const, selector: ".btn" },
           { type: "screenshot" as const },
         ],
       };
 
       // Should handle both legacy and new format together
-      expect(mixedInput.fullPage).toBe(true);
-      expect(mixedInput.steps).toHaveLength(2);
+      expect(mixedInput.viewport).toBeDefined();
+      expect(mixedInput.steps).toHaveLength(3);
     });
   });
 

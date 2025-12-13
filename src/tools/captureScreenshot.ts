@@ -284,7 +284,6 @@ const captureScreenshotSchema = z.object({
   storageTarget: z.string().optional().describe("Storage target identifier for persisting the screenshot."),
   steps: stepsSchema,
   // Legacy parameters - kept for backward compatibility
-  fullPage: z.boolean().optional().describe("[Deprecated: Use steps with type 'fullPage'] Whether to capture the entire scrollable page."),
   cookies: z.array(cookieSchema).optional().describe("[Deprecated: Use steps with type 'cookie'] Cookies to set before loading the page."),
   viewport: viewportSchema.describe("[Deprecated: Use steps with type 'viewport'] Viewport configuration."),
   scroll: scrollSchema.describe("[Deprecated: Use steps with type 'scroll'] Scroll position before capture."),
@@ -300,12 +299,11 @@ export function registerCaptureScreenshotTool(server: McpServer, logger: Logger)
       inputSchema: captureScreenshotSchema,
     },
     async (input) => {
-      const { url, fullPage, viewport, retryPolicy, storageTarget, scroll } = input;
+      const { url, viewport, retryPolicy, storageTarget, scroll } = input;
       const telemetry = getGlobalTelemetry(logger);
       
       logger.info("captureScreenshot:requested", { 
         url, 
-        fullPage,
         viewportPreset: viewport?.preset,
         storageTarget,
         scroll: scroll ? { x: scroll.x, y: scroll.y, selector: scroll.selector } : undefined,
@@ -314,7 +312,6 @@ export function registerCaptureScreenshotTool(server: McpServer, logger: Logger)
       await telemetry.emitTelemetry("tool.invoked", {
         tool: "captureScreenshot",
         url,
-        fullPage,
         viewportPreset: viewport?.preset,
       });
 
@@ -413,16 +410,6 @@ function convertLegacyParametersToSteps(args: CaptureScreenshotInput, logger?: L
       };
       steps.push(cookieStep);
     }
-  }
-  
-  // Convert fullPage to step
-  if (args.fullPage !== undefined) {
-    logger?.debug("legacy:fullPage", { converting: true, enabled: args.fullPage });
-    const fullPageStep: FullPageStep = {
-      type: "fullPage",
-      enabled: args.fullPage,
-    };
-    steps.push(fullPageStep);
   }
   
   // Convert clickActions to steps
