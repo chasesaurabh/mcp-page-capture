@@ -222,6 +222,32 @@ export interface EvaluateStep {
   selector?: string;
 }
 
+export interface ViewportStep {
+  type: "viewport";
+  /** Device preset name (e.g., 'iphone-14', 'desktop-hd', 'ipad-pro') */
+  preset?: string;
+  /** Viewport width in pixels. Overrides preset width if specified */
+  width?: number;
+  /** Viewport height in pixels. Overrides preset height if specified */
+  height?: number;
+  /** Device scale factor (DPR). Defaults to 1 */
+  deviceScaleFactor?: number;
+  /** Whether to emulate a mobile device */
+  isMobile?: boolean;
+  /** Whether the device supports touch events */
+  hasTouch?: boolean;
+  /** Whether the viewport is in landscape orientation */
+  isLandscape?: boolean;
+  /** Custom User-Agent string to use */
+  userAgent?: string;
+}
+
+export interface FullPageStep {
+  type: "fullPage";
+  /** Enable or disable full page capture for subsequent screenshots */
+  enabled: boolean;
+}
+
 export type ActionStep = 
   | DelayStep 
   | ClickStep 
@@ -241,19 +267,27 @@ export type ActionStep =
   | FocusStep
   | BlurStep
   | ClearStep
-  | EvaluateStep;
+  | EvaluateStep
+  | ViewportStep
+  | FullPageStep;
 
 export interface CaptureScreenshotInput {
   url: string;
-  fullPage?: boolean;
   headers?: Record<string, string>;
-  cookies?: CaptureCookieInput[];
-  viewport?: ViewportConfig;
   retryPolicy?: RetryConfig;
   storageTarget?: string;
-  scroll?: ScrollConfig;
-  clickActions?: ClickAction[];
   steps?: ActionStep[];
+  // Legacy parameters - will be converted to steps internally
+  /** @deprecated Use steps with type 'fullPage' instead */
+  fullPage?: boolean;
+  /** @deprecated Use steps with type 'cookie' instead */
+  cookies?: CaptureCookieInput[];
+  /** @deprecated Use steps with type 'viewport' instead */
+  viewport?: ViewportConfig;
+  /** @deprecated Use steps with type 'scroll' instead */
+  scroll?: ScrollConfig;
+  /** @deprecated Use steps with type 'click' instead */
+  clickActions?: ClickAction[];
 }
 
 export interface ScreenshotMetadata {

@@ -4,7 +4,7 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { Logger } from "../logger.js";
-import type { CaptureScreenshotInput, CaptureScreenshotResult, ScreenshotMetadata, ViewportConfig, RetryConfig, ScrollConfig, ClickAction, ActionStep, ScreenshotStep, CookieActionStep, StorageActionStep } from "../types/screenshot.js";
+import type { CaptureScreenshotInput, CaptureScreenshotResult, ScreenshotMetadata, ViewportConfig, RetryConfig, ScrollConfig, ClickAction, ActionStep, ScreenshotStep, CookieActionStep, StorageActionStep, ViewportStep, FullPageStep, CaptureCookieInput } from "../types/screenshot.js";
 import { normalizeHeadersInput, toPuppeteerCookies } from "../utils/requestOptions.js";
 import { normalizeUrl } from "../utils/url.js";
 import { withRetry, type RetryPolicy } from "../utils/retry.js";
@@ -144,6 +144,99 @@ const storageActionStepSchema = z.object({
   value: z.string().optional().describe("The value to store. Required when action is 'set'."),
 }).describe("A step that manages localStorage or sessionStorage. Use 'set' to add/update, 'delete' to remove, 'clear' to remove all, 'get' to read a value, 'list' to get all keys.");
 
+const viewportStepSchema = z.object({
+  type: z.literal("viewport").describe("Step type identifier."),
+  preset: z.string().optional().describe("Device preset name (e.g., 'iphone-14', 'desktop-hd', 'ipad-pro')."),
+  width: z.number().positive().optional().describe("Viewport width in pixels. Overrides preset width if specified."),
+  height: z.number().positive().optional().describe("Viewport height in pixels. Overrides preset height if specified."),
+  deviceScaleFactor: z.number().positive().optional().describe("Device scale factor (DPR). Defaults to 1."),
+  isMobile: z.boolean().optional().describe("Whether to emulate a mobile device."),
+  hasTouch: z.boolean().optional().describe("Whether the device supports touch events."),
+  isLandscape: z.boolean().optional().describe("Whether the viewport is in landscape orientation."),
+  userAgent: z.string().optional().describe("Custom User-Agent string to use."),
+}).describe("A step that configures the viewport for subsequent actions and screenshots.");
+
+const fullPageStepSchema = z.object({
+  type: z.literal("fullPage").describe("Step type identifier."),
+  enabled: z.boolean().describe("Enable or disable full page capture for subsequent screenshots."),
+}).describe("A step that enables or disables full page capture for subsequent screenshot steps.");
+
+const textInputStepSchema = z.object({
+  type: z.literal("text").describe("Step type identifier."),
+  selector: z.string().min(1).describe("CSS selector for the input element."),
+  value: z.string().describe("Text to type."),
+  clearFirst: z.boolean().optional().describe("Clear existing text first (default: true)."),
+  delay: z.number().min(0).max(1000).optional().describe("Delay between keystrokes in ms (0-1000)."),
+  pressEnter: z.boolean().optional().describe("Press Enter after typing (default: false)."),
+}).describe("A step that types text into an input element.");
+
+const selectStepSchema = z.object({
+  type: z.literal("select").describe("Step type identifier."),
+  selector: z.string().min(1).describe("CSS selector for the select element."),
+  value: z.string().optional().describe("Select by value."),
+  text: z.string().optional().describe("Select by visible text."),
+  index: z.number().optional().describe("Select by index."),
+}).describe("A step that selects an option in a dropdown.");
+
+const radioStepSchema = z.object({
+  type: z.literal("radio").describe("Step type identifier."),
+  selector: z.string().min(1).describe("CSS selector for the radio button."),
+  value: z.string().optional().describe("Value attribute of the radio button."),
+  name: z.string().optional().describe("Name attribute to identify the radio group."),
+}).describe("A step that selects a radio button.");
+
+const checkboxStepSchema = z.object({
+  type: z.literal("checkbox").describe("Step type identifier."),
+  selector: z.string().min(1).describe("CSS selector for the checkbox."),
+  checked: z.boolean().describe("Whether to check (true) or uncheck (false)."),
+}).describe("A step that checks or unchecks a checkbox.");
+
+const hoverStepSchema = z.object({
+  type: z.literal("hover").describe("Step type identifier."),
+  selector: z.string().min(1).describe("CSS selector for the element to hover over."),
+  duration: z.number().min(0).max(10000).optional().describe("How long to maintain hover in ms (0-10000)."),
+}).describe("A step that hovers over an element.");
+
+const fileUploadStepSchema = z.object({
+  type: z.literal("upload").describe("Step type identifier."),
+  selector: z.string().min(1).describe("CSS selector for the file input element."),
+  filePaths: z.array(z.string()).describe("File paths to upload."),
+}).describe("A step that uploads files to a file input.");
+
+const formSubmitStepSchema = z.object({
+  type: z.literal("submit").describe("Step type identifier."),
+  selector: z.string().min(1).describe("CSS selector for the form or submit button."),
+  waitForNavigation: z.boolean().optional().describe("Wait for page navigation after submit (default: true)."),
+}).describe("A step that submits a form.");
+
+const keyPressStepSchema = z.object({
+  type: z.literal("keypress").describe("Step type identifier."),
+  key: z.string().describe("Key to press (e.g., 'Enter', 'Tab', 'Escape', 'ArrowDown')."),
+  modifiers: z.array(z.string()).optional().describe("Optional modifiers ('Control', 'Shift', 'Alt', 'Meta')."),
+  selector: z.string().optional().describe("Optional element to focus first."),
+}).describe("A step that presses a keyboard key.");
+
+const focusStepSchema = z.object({
+  type: z.literal("focus").describe("Step type identifier."),
+  selector: z.string().min(1).describe("CSS selector for the element to focus."),
+}).describe("A step that focuses an element.");
+
+const blurStepSchema = z.object({
+  type: z.literal("blur").describe("Step type identifier."),
+  selector: z.string().min(1).describe("CSS selector for the element to blur."),
+}).describe("A step that removes focus from an element.");
+
+const clearStepSchema = z.object({
+  type: z.literal("clear").describe("Step type identifier."),
+  selector: z.string().min(1).describe("CSS selector for the input element to clear."),
+}).describe("A step that clears the text in an input element.");
+
+const evaluateStepSchema = z.object({
+  type: z.literal("evaluate").describe("Step type identifier."),
+  script: z.string().describe("JavaScript code to execute."),
+  selector: z.string().optional().describe("Optional selector to pass element to the script."),
+}).describe("A step that executes JavaScript in the page context.");
+
 const actionStepSchema = z.discriminatedUnion("type", [
   delayStepSchema,
   clickStepSchema,
@@ -152,9 +245,23 @@ const actionStepSchema = z.discriminatedUnion("type", [
   screenshotStepSchema,
   cookieActionStepSchema,
   storageActionStepSchema,
+  viewportStepSchema,
+  fullPageStepSchema,
+  textInputStepSchema,
+  selectStepSchema,
+  radioStepSchema,
+  checkboxStepSchema,
+  hoverStepSchema,
+  fileUploadStepSchema,
+  formSubmitStepSchema,
+  keyPressStepSchema,
+  focusStepSchema,
+  blurStepSchema,
+  clearStepSchema,
+  evaluateStepSchema,
 ]);
 
-const stepsSchema = z.array(actionStepSchema).optional().describe("Ordered sequence of action steps to execute. Supports: delay (pause execution), click (interact with elements), scroll (navigate page), waitForSelector (wait for elements), screenshot (capture with optional fullPage/selector), cookie (add/edit/delete cookies), and storage (manage localStorage/sessionStorage).");
+const stepsSchema = z.array(actionStepSchema).optional().describe("Ordered sequence of action steps to execute. Supports: delay, click, scroll, waitForSelector, screenshot, cookie, storage, viewport, fullPage, text, select, radio, checkbox, hover, upload, submit, keypress, focus, blur, clear, and evaluate.");
 
 const captureScreenshotSchema = z.object({
   url: z
@@ -172,15 +279,16 @@ const captureScreenshotSchema = z.object({
         return z.NEVER;
       }
     }),
-  fullPage: z.boolean().optional().default(false).describe("Whether to capture the entire scrollable page. Defaults to false (viewport only)."),
   headers: headersSchema,
-  cookies: z.array(cookieSchema).optional().describe("Cookies to set before loading the page."),
-  viewport: viewportSchema,
   retryPolicy: retryPolicySchema,
   storageTarget: z.string().optional().describe("Storage target identifier for persisting the screenshot."),
-  scroll: scrollSchema,
-  clickActions: clickActionsSchema,
   steps: stepsSchema,
+  // Legacy parameters - kept for backward compatibility
+  fullPage: z.boolean().optional().describe("[Deprecated: Use steps with type 'fullPage'] Whether to capture the entire scrollable page."),
+  cookies: z.array(cookieSchema).optional().describe("[Deprecated: Use steps with type 'cookie'] Cookies to set before loading the page."),
+  viewport: viewportSchema.describe("[Deprecated: Use steps with type 'viewport'] Viewport configuration."),
+  scroll: scrollSchema.describe("[Deprecated: Use steps with type 'scroll'] Scroll position before capture."),
+  clickActions: clickActionsSchema.describe("[Deprecated: Use steps with type 'click'] Click actions before capture."),
 });
 
 export function registerCaptureScreenshotTool(server: McpServer, logger: Logger) {
@@ -264,12 +372,121 @@ export function registerCaptureScreenshotTool(server: McpServer, logger: Logger)
   );
 }
 
+/**
+ * Converts legacy parameters to steps for backward compatibility
+ */
+function convertLegacyParametersToSteps(args: CaptureScreenshotInput, logger?: Logger): ActionStep[] {
+  const steps: ActionStep[] = [];
+  
+  // Convert viewport configuration to step
+  if (args.viewport) {
+    logger?.debug("legacy:viewport", { converting: true });
+    const viewportStep: ViewportStep = {
+      type: "viewport",
+      preset: args.viewport.preset,
+      width: args.viewport.width,
+      height: args.viewport.height,
+      deviceScaleFactor: args.viewport.deviceScaleFactor,
+      isMobile: args.viewport.isMobile,
+      hasTouch: args.viewport.hasTouch,
+      isLandscape: args.viewport.isLandscape,
+      userAgent: args.viewport.userAgent,
+    };
+    steps.push(viewportStep);
+  }
+  
+  // Convert cookies to steps
+  if (args.cookies && args.cookies.length > 0) {
+    logger?.debug("legacy:cookies", { converting: true, count: args.cookies.length });
+    for (const cookie of args.cookies) {
+      const cookieStep: CookieActionStep = {
+        type: "cookie",
+        action: "set",
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain,
+        path: cookie.path,
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        sameSite: cookie.sameSite,
+        expires: cookie.expires,
+      };
+      steps.push(cookieStep);
+    }
+  }
+  
+  // Convert fullPage to step
+  if (args.fullPage !== undefined) {
+    logger?.debug("legacy:fullPage", { converting: true, enabled: args.fullPage });
+    const fullPageStep: FullPageStep = {
+      type: "fullPage",
+      enabled: args.fullPage,
+    };
+    steps.push(fullPageStep);
+  }
+  
+  // Convert clickActions to steps
+  if (args.clickActions && args.clickActions.length > 0) {
+    logger?.debug("legacy:clickActions", { converting: true, count: args.clickActions.length });
+    for (const action of args.clickActions) {
+      // Add delay before click if specified
+      if (action.delayBefore && action.delayBefore > 0) {
+        steps.push({
+          type: "delay",
+          duration: action.delayBefore,
+        });
+      }
+      
+      // Add the click step
+      steps.push({
+        type: "click",
+        selector: action.selector,
+        button: action.button,
+        clickCount: action.clickCount,
+        waitForSelector: action.waitForSelector,
+        waitForNavigation: action.waitForNavigation,
+      });
+      
+      // Add delay after click if specified
+      if (action.delayAfter && action.delayAfter > 0) {
+        steps.push({
+          type: "delay",
+          duration: action.delayAfter,
+        });
+      }
+    }
+  }
+  
+  // Convert scroll to step
+  if (args.scroll) {
+    logger?.debug("legacy:scroll", { converting: true });
+    steps.push({
+      type: "scroll",
+      x: args.scroll.x,
+      y: args.scroll.y,
+      selector: args.scroll.selector,
+      behavior: args.scroll.behavior,
+    });
+  }
+  
+  // Add screenshot step at the end (will be added in main function if no explicit one exists)
+  
+  return steps;
+}
+
 async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Promise<CaptureScreenshotResult> {
   const telemetry = getGlobalTelemetry(logger);
   let retryAttempts = 0;
   
-  // Prepare viewport configuration
-  const viewport = resolveViewport(args.viewport, logger);
+  // Convert legacy parameters to steps and merge with explicit steps
+  const legacySteps = convertLegacyParametersToSteps(args, logger);
+  const allSteps = [...legacySteps, ...(args.steps || [])];
+  
+  // If no screenshot step exists, add one at the end
+  const hasScreenshotStep = allSteps.some(step => step.type === "screenshot");
+  if (!hasScreenshotStep) {
+    allSteps.push({ type: "screenshot" } as ScreenshotStep);
+  }
   
   // Prepare retry policy
   const retryPolicy: Partial<RetryPolicy> = args.retryPolicy || {};
@@ -285,20 +502,8 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
       
       const page = await browser.newPage();
       
-      // Apply viewport configuration
-      await page.setViewport(viewport);
-      
-      // Set user agent if specified
-      if (viewport.userAgent) {
-        await page.setUserAgent(viewport.userAgent);
-      }
-      
-      // Enable touch if specified
-      if (viewport.hasTouch) {
-        await page.evaluateOnNewDocument(() => {
-          (window as any).ontouchstart = true;
-        });
-      }
+      // Set default viewport (will be overridden by viewport steps if any)
+      await page.setViewport(DEFAULT_VIEWPORT as ViewportPreset);
       
       page.setDefaultNavigationTimeout(CAPTURE_TIMEOUT_MS);
 
@@ -307,14 +512,29 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
         await page.setExtraHTTPHeaders(normalizedHeaders);
       }
 
-      const cookieParams = toPuppeteerCookies(args.cookies, args.url);
-      if (cookieParams.length > 0) {
-        await page.setCookie(...cookieParams);
+      // Execute pre-navigation steps (viewport and cookies that need to be set before page load)
+      const preNavSteps = allSteps.filter(step => 
+        step.type === "viewport" || 
+        (step.type === "cookie" && (step as CookieActionStep).action === "set")
+      );
+      const postNavSteps = allSteps.filter(step => 
+        step.type !== "viewport" && 
+        !(step.type === "cookie" && (step as CookieActionStep).action === "set")
+      );
+
+      // Execute pre-navigation steps
+      let preNavStepsResult: Partial<StepsExecutionResult> = { 
+        stepsExecuted: 0, 
+        screenshotsTaken: 0, 
+        fullPageEnabled: false, 
+        viewportPreset: undefined 
+      };
+      if (preNavSteps.length > 0) {
+        preNavStepsResult = await executeSteps(page, preNavSteps, logger, true);
       }
 
       await telemetry.emitTelemetry("navigation.started", { 
         url: args.url,
-        viewport: `${viewport.width}x${viewport.height}`,
       });
 
       const response = await page.goto(args.url, {
@@ -336,61 +556,22 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
         status: response.status(),
       });
 
-      let screenshotBuffer: Buffer;
-      let clickActionsExecuted = 0;
-      let stepsExecuted = 0;
+      // Execute post-navigation steps
+      const stepsResult = await executeSteps(page, postNavSteps, logger);
+      const screenshotBuffer = stepsResult.screenshotBuffer;
+      const totalStepsExecuted = (preNavStepsResult.stepsExecuted || 0) + stepsResult.stepsExecuted;
+      
+      logger.info("steps:executed", {
+        url: args.url,
+        stepsRequested: allSteps.length,
+        stepsExecuted: totalStepsExecuted,
+        screenshotsTaken: stepsResult.screenshotsTaken,
+      });
 
-      // If steps are provided, use the new steps-based flow
-      if (args.steps && args.steps.length > 0) {
-        const stepsResult = await executeSteps(page, args.steps, Boolean(args.fullPage), logger);
-        screenshotBuffer = stepsResult.screenshotBuffer;
-        stepsExecuted = stepsResult.stepsExecuted;
-        
-        logger.info("steps:executed", {
-          url: args.url,
-          stepsRequested: args.steps.length,
-          stepsExecuted,
-          screenshotsTaken: stepsResult.screenshotsTaken,
-        });
-
-        await telemetry.emitTelemetry("screenshot.captured", {
-          url: args.url,
-          bytes: screenshotBuffer.length,
-          fullPage: args.fullPage,
-        });
-      } else {
-        // Legacy flow: clickActions, scroll, then screenshot
-        if (args.clickActions && args.clickActions.length > 0) {
-          clickActionsExecuted = await executeClickActions(page, args.clickActions, logger);
-          logger.info("clickActions:executed", {
-            url: args.url,
-            actionsRequested: args.clickActions.length,
-            actionsExecuted: clickActionsExecuted,
-          });
-        }
-
-        // Execute scroll if specified
-        if (args.scroll) {
-          const scrollPosition = await executeScroll(page, args.scroll, logger);
-          await telemetry.emitTelemetry("scroll.executed", {
-            url: args.url,
-            scrollX: scrollPosition.x,
-            scrollY: scrollPosition.y,
-            selector: args.scroll.selector,
-          });
-        }
-
-        screenshotBuffer = (await page.screenshot({
-          type: "png",
-          fullPage: Boolean(args.fullPage),
-        })) as Buffer;
-
-        await telemetry.emitTelemetry("screenshot.captured", {
-          url: args.url,
-          bytes: screenshotBuffer.length,
-          fullPage: args.fullPage,
-        });
-      }
+      await telemetry.emitTelemetry("screenshot.captured", {
+        url: args.url,
+        bytes: screenshotBuffer.length,
+      })
 
       const metrics = await page.evaluate(() => ({
         viewportWidth: window.innerWidth,
@@ -401,6 +582,9 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
         scrollY: window.scrollY,
       }));
 
+      // Get current viewport for metadata (may not be available in tests)
+      const currentViewport = page.viewport ? page.viewport() : { width: 1280, height: 720 };
+
       // Store screenshot if storage target is specified
       let storageLocation: string | undefined;
       if (args.storageTarget) {
@@ -410,8 +594,8 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
           timestamp: new Date().toISOString(),
           tags: {
             url: args.url,
-            fullPage: String(args.fullPage),
-            viewport: `${viewport.width}x${viewport.height}`,
+            fullPage: String(stepsResult.fullPageEnabled),
+            viewport: `${currentViewport?.width}x${currentViewport?.height}`,
           },
         });
         storageLocation = storageResult.location;
@@ -419,7 +603,7 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
 
       const metadata: ScreenshotMetadata = {
         url: args.url,
-        fullPage: Boolean(args.fullPage),
+        fullPage: stepsResult.fullPageEnabled,
         viewportWidth: metrics.viewportWidth,
         viewportHeight: metrics.viewportHeight,
         scrollWidth: metrics.scrollWidth,
@@ -428,11 +612,11 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
         scrollY: metrics.scrollY,
         bytes: screenshotBuffer.length,
         capturedAt: new Date().toISOString(),
-        viewportPreset: args.viewport?.preset,
+        viewportPreset: stepsResult.viewportPreset || preNavStepsResult.viewportPreset,
         retryAttempts,
         storageLocation,
-        clickActionsExecuted: clickActionsExecuted > 0 ? clickActionsExecuted : undefined,
-        stepsExecuted: stepsExecuted > 0 ? stepsExecuted : undefined,
+        clickActionsExecuted: undefined, // Deprecated
+        stepsExecuted: totalStepsExecuted > 0 ? totalStepsExecuted : undefined,
       };
 
       const imageBase64 = screenshotBuffer.toString("base64");
@@ -651,17 +835,21 @@ interface StepsExecutionResult {
   screenshotBuffer: Buffer;
   stepsExecuted: number;
   screenshotsTaken: number;
+  fullPageEnabled: boolean;
+  viewportPreset?: string;
 }
 
 async function executeSteps(
   page: Awaited<ReturnType<typeof puppeteer.launch>>['newPage'] extends () => Promise<infer P> ? P : never,
   steps: ActionStep[],
-  fullPage: boolean,
-  logger?: Logger
+  logger?: Logger,
+  skipScreenshot: boolean = false
 ): Promise<StepsExecutionResult> {
   let stepsExecuted = 0;
   let screenshotsTaken = 0;
   let screenshotBuffer: Buffer | null = null;
+  let fullPageEnabled = false;
+  let viewportPreset: string | undefined;
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
@@ -669,6 +857,41 @@ async function executeSteps(
 
     try {
       switch (step.type) {
+        case "viewport": {
+          const viewportStep = step as ViewportStep;
+          logger?.debug("step:viewport", { 
+            index: i, 
+            preset: viewportStep.preset,
+            width: viewportStep.width,
+            height: viewportStep.height,
+          });
+
+          const viewport = resolveViewport(viewportStep, logger);
+          await page.setViewport(viewport);
+          
+          if (viewport.userAgent) {
+            await page.setUserAgent(viewport.userAgent);
+          }
+          
+          if (viewport.hasTouch) {
+            await page.evaluateOnNewDocument(() => {
+              (window as any).ontouchstart = true;
+            });
+          }
+          
+          viewportPreset = viewportStep.preset;
+          stepsExecuted++;
+          break;
+        }
+
+        case "fullPage": {
+          const fullPageStep = step as FullPageStep;
+          logger?.debug("step:fullPage", { index: i, enabled: fullPageStep.enabled });
+          fullPageEnabled = fullPageStep.enabled;
+          stepsExecuted++;
+          break;
+        }
+
         case "delay": {
           logger?.debug("step:delay", { index: i, duration: step.duration });
           await new Promise(resolve => setTimeout(resolve, step.duration));
@@ -773,8 +996,8 @@ async function executeSteps(
         }
 
         case "screenshot": {
-          // Use step-level fullPage if specified, otherwise fall back to default
-          const useFullPage = step.fullPage !== undefined ? step.fullPage : fullPage;
+          // Use step-level fullPage if specified, otherwise use current setting
+          const useFullPage = step.fullPage !== undefined ? step.fullPage : fullPageEnabled;
           logger?.debug("step:screenshot", { index: i, fullPage: useFullPage, selector: step.selector });
           
           if (step.selector) {
@@ -1167,20 +1390,27 @@ async function executeSteps(
     }
   }
 
-  // If no screenshot step was executed, take one at the end
-  if (!screenshotBuffer) {
+  // If no screenshot step was executed and we're not skipping, take one at the end
+  if (!screenshotBuffer && !skipScreenshot) {
     logger?.debug("step:auto_screenshot", { reason: "no screenshot step found" });
     screenshotBuffer = (await page.screenshot({
       type: "png",
-      fullPage,
+      fullPage: fullPageEnabled,
     })) as Buffer;
     screenshotsTaken++;
   }
 
+  // Provide a default buffer if needed (shouldn't happen in normal flow)
+  if (!screenshotBuffer && !skipScreenshot) {
+    screenshotBuffer = Buffer.from([]);
+  }
+
   return {
-    screenshotBuffer,
+    screenshotBuffer: screenshotBuffer || Buffer.from([]),
     stepsExecuted,
     screenshotsTaken,
+    fullPageEnabled,
+    viewportPreset,
   };
 }
 

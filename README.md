@@ -15,6 +15,7 @@ mcp-page-capture is a Model Context Protocol (MCP) server that orchestrates head
 - ⚙️ Declarative MCP tool schema for predictable integrations and strong validation
 - 🔍 Structured DOM extraction with optional CSS selectors for AI-friendly consumption
 - 📱 Advanced viewport presets and mobile emulation profiles (iPhone, iPad, Android, desktop)
+- 🎯 Unified steps system for all page interactions (click, scroll, type, etc.)
 - 🔄 Automatic retry with exponential backoff for transient failures
 - 📊 Telemetry hooks for centralized observability and monitoring
 - 💾 Pluggable storage backends (local filesystem, S3, memory)
@@ -99,31 +100,37 @@ await startMcpPageCaptureServer();
 ## Usage
 
 ### Tool invocation examples
+
+#### Basic Screenshot (using steps)
 ```json
 {
   "server": "page-capture",
   "tool": "captureScreenshot",
   "params": {
     "url": "https://example.com",
-    "fullPage": false
+    "steps": [
+      { "type": "screenshot" }
+    ]
   }
 }
 ```
 
+#### Full Page Screenshot
 ```json
 {
   "server": "page-capture",
   "tool": "captureScreenshot",
   "params": {
     "url": "https://docs.modelcontextprotocol.io",
-    "fullPage": true
-  },
-  "metadata": {
-    "requestId": "docs-home"
+    "steps": [
+      { "type": "fullPage", "enabled": true },
+      { "type": "screenshot" }
+    ]
   }
 }
 ```
 
+#### With Authentication and Cookies
 ```json
 {
   "server": "page-capture",
@@ -133,12 +140,15 @@ await startMcpPageCaptureServer();
     "headers": {
       "authorization": "Bearer dev-token"
     },
-    "cookies": [
+    "steps": [
       {
+        "type": "cookie",
+        "action": "set",
         "name": "session",
         "value": "abc123",
         "path": "/secure"
-      }
+      },
+      { "type": "screenshot" }
     ]
   }
 }
@@ -155,6 +165,7 @@ await startMcpPageCaptureServer();
 }
 ```
 
+#### Complex Interaction Flow
 ```json
 {
   "server": "page-capture",
@@ -162,41 +173,89 @@ await startMcpPageCaptureServer();
   "params": {
     "url": "https://example.com/form",
     "steps": [
-      {
-        "type": "text",
-        "selector": "#username",
-        "value": "john.doe@example.com"
-      },
-      {
-        "type": "text",
-        "selector": "#password",
-        "value": "secure123"
-      },
-      {
-        "type": "click",
-        "selector": "button[type='submit']",
-        "waitForNavigation": true
-      },
-      {
-        "type": "screenshot",
-        "fullPage": true
-      }
+      { "type": "viewport", "preset": "iphone-14" },
+      { "type": "cookie", "action": "set", "name": "consent", "value": "accepted" },
+      { "type": "text", "selector": "#username", "value": "john.doe@example.com" },
+      { "type": "text", "selector": "#password", "value": "secure123" },
+      { "type": "click", "selector": "button[type='submit']", "waitForNavigation": true },
+      { "type": "waitForSelector", "selector": ".dashboard" },
+      { "type": "fullPage", "enabled": true },
+      { "type": "screenshot" }
     ]
   }
 }
 ```
 
+#### Mobile Device Emulation
+```json
+{
+  "server": "page-capture",
+  "tool": "captureScreenshot",
+  "params": {
+    "url": "https://example.com",
+    "steps": [
+      {
+        "type": "viewport",
+        "preset": "ipad-pro",
+        "isLandscape": true
+      },
+      { "type": "scroll", "y": 500 },
+      { "type": "screenshot" }
+    ]
+  }
+}
+```
+
+### Supported Step Types
+
+| Step Type | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `viewport` | Configure browser viewport | `preset`, `width`, `height`, `isMobile` |
+| `fullPage` | Enable/disable full page capture | `enabled` |
+| `cookie` | Manage cookies | `action`, `name`, `value` |
+| `screenshot` | Capture screenshot | `fullPage`, `selector` |
+| `click` | Click an element | `selector`, `button`, `waitForNavigation` |
+| `scroll` | Scroll the page | `x`, `y`, `selector`, `behavior` |
+| `text` | Type text into input | `selector`, `value`, `clearFirst` |
+| `select` | Select dropdown option | `selector`, `value`, `text`, `index` |
+| `checkbox` | Check/uncheck checkbox | `selector`, `checked` |
+| `radio` | Select radio button | `selector`, `value`, `name` |
+| `hover` | Hover over element | `selector`, `duration` |
+| `waitForSelector` | Wait for element | `selector`, `timeout` |
+| `delay` | Pause execution | `duration` |
+| `keypress` | Press keyboard key | `key`, `modifiers` |
+| `focus` | Focus element | `selector` |
+| `blur` | Blur element | `selector` |
+| `clear` | Clear input field | `selector` |
+| `upload` | Upload files | `selector`, `filePaths` |
+| `submit` | Submit form | `selector`, `waitForNavigation` |
+| `evaluate` | Execute JavaScript | `script`, `selector` |
+| `storage` | Manage localStorage/sessionStorage | `storageType`, `action`, `key`, `value` |
+
+### Legacy Parameter Support
+
+For backward compatibility, the following parameters are still supported but deprecated:
+- `fullPage` - Use `{ type: "fullPage", enabled: true }` step instead
+- `cookies` - Use `{ type: "cookie", action: "set", ... }` steps instead  
+- `viewport` - Use `{ type: "viewport", ... }` step instead
+- `scroll` - Use `{ type: "scroll", ... }` step instead
+- `clickActions` - Use `{ type: "click", ... }` steps instead
+
 ### Example response
 ```json
 {
-  "status": "Screenshot captured successfully",
-  "path": "captures/example-com-2025-11-23T08-30-12.png",
-  "width": 1280,
-  "height": 720,
-  "fullPage": false,
-  "timestamp": "2025-11-23T08:30:12.713Z"
+  "content": [
+    {
+      "type": "text",
+      "text": "mcp-page-capture screenshot\nURL: https://example.com\nCaptured: 2025-12-13T08:30:12.713Z\nFull page: false\nViewport: 1280x720\nDocument: 1280x2000\nScroll position: (0, 0)\nSize: 45.2 KB\nSteps executed: 5"
+    },
+    {
+      "type": "image",
+      "mimeType": "image/png",
+      "data": "iVBORw0KGgoAAAANSUhEUgA..."
+    }
+  ]
 }
-```
 
 ## Supported options
 
