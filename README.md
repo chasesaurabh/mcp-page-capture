@@ -155,6 +155,37 @@ await startMcpPageCaptureServer();
 }
 ```
 
+```json
+{
+  "server": "page-capture",
+  "tool": "captureScreenshot",
+  "params": {
+    "url": "https://example.com/form",
+    "steps": [
+      {
+        "type": "text",
+        "selector": "#username",
+        "value": "john.doe@example.com"
+      },
+      {
+        "type": "text",
+        "selector": "#password",
+        "value": "secure123"
+      },
+      {
+        "type": "click",
+        "selector": "button[type='submit']",
+        "waitForNavigation": true
+      },
+      {
+        "type": "screenshot",
+        "fullPage": true
+      }
+    ]
+  }
+}
+```
+
 ### Example response
 ```json
 {
@@ -197,6 +228,236 @@ await startMcpPageCaptureServer();
 - `viewport` (object, optional): Same viewport configuration as `captureScreenshot`
 - `retryPolicy` (object, optional): Same retry configuration as `captureScreenshot`
 - `storageTarget` (string, optional): Storage backend name for saving DOM data
+
+## Action Steps for captureScreenshot
+
+The `captureScreenshot` tool supports a comprehensive `steps` array that allows you to perform various web interactions before capturing the screenshot. Each step is executed in sequence, allowing for complex automation scenarios.
+
+### Text Input (`text`)
+Type text into input fields:
+```json
+{
+  "type": "text",
+  "selector": "#username",
+  "value": "john.doe@example.com",
+  "clearFirst": true,  // Clear existing text first (default: true)
+  "delay": 100,  // Delay between keystrokes in ms (0-1000)
+  "pressEnter": false  // Press Enter after typing (default: false)
+}
+```
+
+### Select Dropdown (`select`)
+Select an option from a dropdown:
+```json
+{
+  "type": "select",
+  "selector": "#country",
+  "value": "us"  // OR "text": "United States" OR "index": 0
+}
+```
+
+### Radio Button (`radio`)
+Select a radio button:
+```json
+{
+  "type": "radio",
+  "selector": "input[type='radio']",
+  "value": "option1",  // Value attribute of the radio button
+  "name": "preference"  // Name attribute to identify the radio group
+}
+```
+
+### Checkbox (`checkbox`)
+Check or uncheck a checkbox:
+```json
+{
+  "type": "checkbox",
+  "selector": "#agree-terms",
+  "checked": true  // true to check, false to uncheck
+}
+```
+
+### Click (`click`)
+Click on elements:
+```json
+{
+  "type": "click",
+  "selector": "button.submit",
+  "button": "left",  // "left", "right", or "middle" (default: left)
+  "clickCount": 1,  // 1=single, 2=double, 3=triple (default: 1)
+  "waitForNavigation": false,  // Wait for page navigation (default: false)
+  "waitForSelector": ".modal-content"  // Wait for element to appear after click
+}
+```
+
+### Hover (`hover`)
+Hover over elements:
+```json
+{
+  "type": "hover",
+  "selector": ".dropdown-trigger",
+  "duration": 1000  // How long to maintain hover in ms (0-10000)
+}
+```
+
+### File Upload (`upload`)
+Upload files:
+```json
+{
+  "type": "upload",
+  "selector": "input[type='file']",
+  "filePaths": ["/path/to/file1.pdf", "/path/to/file2.jpg"]
+}
+```
+
+### Form Submit (`submit`)
+Submit forms:
+```json
+{
+  "type": "submit",
+  "selector": "#contact-form",  // Form element or submit button
+  "waitForNavigation": true  // Wait for page navigation (default: true)
+}
+```
+
+### Scroll (`scroll`)
+Scroll the page:
+```json
+{
+  "type": "scroll",
+  "selector": "#section-2",  // Scroll to element (takes precedence)
+  "x": 0,  // OR horizontal scroll position in pixels
+  "y": 500,  // OR vertical scroll position in pixels
+  "behavior": "smooth"  // "auto" or "smooth" (default: auto)
+}
+```
+
+### Key Press (`keypress`)
+Press keyboard keys:
+```json
+{
+  "type": "keypress",
+  "key": "Enter",  // Key to press (e.g., "Enter", "Tab", "Escape", "ArrowDown")
+  "modifiers": ["Control", "Shift"],  // Optional modifiers
+  "selector": "#search-box"  // Optional element to focus first
+}
+```
+
+### Wait for Selector (`waitForSelector`)
+Wait for element to appear:
+```json
+{
+  "type": "waitForSelector",
+  "selector": ".loading-complete",
+  "timeout": 10000  // Timeout in ms (default: 10000)
+}
+```
+
+### Delay (`delay`)
+Wait for specified duration:
+```json
+{
+  "type": "delay",
+  "duration": 2000  // Wait duration in ms
+}
+```
+
+### Focus (`focus`)
+Focus an element:
+```json
+{
+  "type": "focus",
+  "selector": "#search-input"
+}
+```
+
+### Blur (`blur`)
+Blur (unfocus) an element:
+```json
+{
+  "type": "blur",
+  "selector": "#search-input"
+}
+```
+
+### Clear (`clear`)
+Clear input field contents:
+```json
+{
+  "type": "clear",
+  "selector": "#search-input"
+}
+```
+
+### Evaluate (`evaluate`)
+Execute custom JavaScript:
+```json
+{
+  "type": "evaluate",
+  "script": "document.title = 'New Title'; return document.title;",
+  "selector": "#element"  // Optional element to pass to the script
+}
+```
+
+### Screenshot (`screenshot`)
+Capture screenshot at any point:
+```json
+{
+  "type": "screenshot",
+  "fullPage": true,  // Capture entire page (optional)
+  "selector": ".specific-element"  // Capture specific element (optional)
+}
+```
+
+### Cookie Management (`cookie`)
+Manage browser cookies:
+```json
+{
+  "type": "cookie",
+  "action": "set",  // "set", "delete", "get", or "list"
+  "name": "session_id",
+  "value": "abc123",
+  "domain": ".example.com",
+  "path": "/",
+  "secure": true
+}
+```
+
+### Storage Management (`storage`)
+Manage localStorage/sessionStorage:
+```json
+{
+  "type": "storage",
+  "storageType": "localStorage",  // or "sessionStorage"
+  "action": "set",  // "set", "delete", "clear", "get", or "list"
+  "key": "user_preferences",
+  "value": "{\"theme\":\"dark\"}"
+}
+```
+
+### Example: Complex Form Interaction with Screenshot
+```json
+{
+  "tool": "captureScreenshot",
+  "params": {
+    "url": "https://example.com/signup",
+    "steps": [
+      { "type": "waitForSelector", "selector": "#signup-form" },
+      { "type": "text", "selector": "#email", "value": "user@example.com" },
+      { "type": "text", "selector": "#password", "value": "SecurePass123!" },
+      { "type": "select", "selector": "#country", "text": "United States" },
+      { "type": "radio", "selector": "input[name='plan']", "value": "premium" },
+      { "type": "checkbox", "selector": "#newsletter", "checked": true },
+      { "type": "checkbox", "selector": "#terms", "checked": true },
+      { "type": "hover", "selector": ".tooltip-trigger", "duration": 500 },
+      { "type": "scroll", "y": 200 },
+      { "type": "click", "selector": "button[type='submit']", "waitForNavigation": true },
+      { "type": "delay", "duration": 2000 },
+      { "type": "screenshot", "fullPage": true }
+    ]
+  }
+}
+```
 
 ## Viewport Presets
 

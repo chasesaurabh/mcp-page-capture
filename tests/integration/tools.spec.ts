@@ -1475,6 +1475,508 @@ describe("captureScreenshot tool", () => {
       expect(response.content[0].text).toContain("Steps executed: 7");
       expect(mockBrowser.close).toHaveBeenCalledTimes(1);
     });
+
+    // New action type tests
+    it("executes text input step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("text-input-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/form",
+        fullPage: false,
+        steps: [
+          { type: "text", selector: "#username", value: "testuser" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.waitForSelector).toHaveBeenCalledWith("#username", { timeout: 5000 });
+      expect(mockPage.type).toHaveBeenCalledWith("#username", "testuser", { delay: 0 });
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes text input step with pressEnter option", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("text-enter-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/search",
+        fullPage: false,
+        steps: [
+          { type: "text", selector: "#search", value: "query", pressEnter: true },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.type).toHaveBeenCalledWith("#search", "query", { delay: 0 });
+      expect(mockPage.keyboard.press).toHaveBeenCalledWith("Enter");
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes select step by value", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("select-value-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/form",
+        fullPage: false,
+        steps: [
+          { type: "select", selector: "#country", value: "us" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.select).toHaveBeenCalledWith("#country", "us");
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes select step by text", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: select by text, then metrics
+      queueEvaluateResult("us");
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("select-text-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/form",
+        fullPage: false,
+        steps: [
+          { type: "select", selector: "#country", text: "United States" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes checkbox step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: checkbox check, then metrics
+      queueEvaluateResult(false); // checkbox is unchecked
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("checkbox-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/form",
+        fullPage: false,
+        steps: [
+          { type: "checkbox", selector: "#terms", checked: true },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.click).toHaveBeenCalledWith("#terms");
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes hover step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("hover-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/menu",
+        fullPage: false,
+        steps: [
+          { type: "hover", selector: ".dropdown" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.hover).toHaveBeenCalledWith(".dropdown");
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes focus step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("focus-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/form",
+        fullPage: false,
+        steps: [
+          { type: "focus", selector: "#email" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.focus).toHaveBeenCalledWith("#email");
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes blur step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: blur operation, then metrics
+      queueEvaluateResult(undefined);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("blur-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/form",
+        fullPage: false,
+        steps: [
+          { type: "blur", selector: "#email" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes clear step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("clear-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/form",
+        fullPage: false,
+        steps: [
+          { type: "clear", selector: "#search" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.click).toHaveBeenCalledWith("#search", { clickCount: 3 });
+      expect(mockPage.keyboard.press).toHaveBeenCalledWith("Backspace");
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes keypress step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("keypress-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/form",
+        fullPage: false,
+        steps: [
+          { type: "keypress", key: "Tab" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.keyboard.press).toHaveBeenCalledWith("Tab");
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes keypress step with modifiers", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("keypress-modifiers-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/form",
+        fullPage: false,
+        steps: [
+          { type: "keypress", key: "a", modifiers: ["Control"] },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.keyboard.down).toHaveBeenCalledWith("Control");
+      expect(mockPage.keyboard.press).toHaveBeenCalledWith("a");
+      expect(mockPage.keyboard.up).toHaveBeenCalledWith("Control");
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes evaluate step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: custom script, then metrics
+      queueEvaluateResult("Script Result");
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("evaluate-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/page",
+        fullPage: false,
+        steps: [
+          { type: "evaluate", script: "return document.title;" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes radio step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("radio-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/form",
+        fullPage: false,
+        steps: [
+          { type: "radio", selector: "input[type='radio']", value: "option1" },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.waitForSelector).toHaveBeenCalledWith("input[type='radio'][value=\"option1\"]", { timeout: 5000 });
+      expect(mockPage.click).toHaveBeenCalledWith("input[type='radio'][value=\"option1\"]");
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes upload step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("upload-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/upload",
+        fullPage: false,
+        steps: [
+          { type: "upload", selector: "input[type='file']", filePaths: ["/path/to/file.pdf"] },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.$).toHaveBeenCalledWith("input[type='file']");
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("executes submit step", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: form submit, then metrics
+      queueEvaluateResult(undefined);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 1000,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageBuffer = Buffer.from("submit-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const response = await handler({
+        url: "https://example.com/form",
+        fullPage: false,
+        steps: [
+          { type: "submit", selector: "#contact-form", waitForNavigation: false },
+          { type: "screenshot" },
+        ],
+      });
+
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("handles scroll with smooth behavior", async () => {
+      const logger = createLogger();
+      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
+
+      // Queue evaluate results: scroll, then metrics
+      queueEvaluateResult(undefined);
+      queueEvaluateResult({
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        scrollWidth: 1280,
+        scrollHeight: 2000,
+        scrollX: 0,
+        scrollY: 500,
+      });
+
+      const imageBuffer = Buffer.from("smooth-scroll-image");
+      setScreenshotBuffer(imageBuffer);
+
+      const startTime = Date.now();
+      const response = await handler({
+        url: "https://example.com/long-page",
+        fullPage: false,
+        steps: [
+          { type: "scroll", y: 500, behavior: "smooth" },
+          { type: "screenshot" },
+        ],
+      });
+      const elapsed = Date.now() - startTime;
+
+      expect(elapsed).toBeGreaterThanOrEqual(400); // smooth scroll waits 500ms
+      expect(mockPage.evaluate).toHaveBeenCalled();
+      expect(response.content[0].text).toContain("Steps executed: 2");
+      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

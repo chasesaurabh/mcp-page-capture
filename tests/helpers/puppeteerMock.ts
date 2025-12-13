@@ -13,7 +13,18 @@ let cookiesImpl: () => Promise<any[]> = async () => [];
 let deleteCookieImpl: (cookie: any) => Promise<void> = async () => undefined;
 let elementSelectorImpl: (selector: string) => Promise<any> = async (selector: string) => ({
   screenshot: vi.fn(async () => screenshotBuffer),
+  uploadFile: vi.fn(async () => undefined),
 });
+let typeImpl: (selector: string, text: string, options?: any) => Promise<void> = async () => undefined;
+let selectImpl: (selector: string, ...values: string[]) => Promise<string[]> = async () => [];
+let hoverImpl: (selector: string) => Promise<void> = async () => undefined;
+let focusImpl: (selector: string) => Promise<void> = async () => undefined;
+
+const mockKeyboard = {
+  press: vi.fn(async () => undefined),
+  down: vi.fn(async () => undefined),
+  up: vi.fn(async () => undefined),
+};
 
 const mockPage = {
   setViewport: vi.fn(async () => undefined),
@@ -37,6 +48,11 @@ const mockPage = {
   cookies: vi.fn(async () => cookiesImpl()),
   deleteCookie: vi.fn(async (cookie: any) => deleteCookieImpl(cookie)),
   $: vi.fn(async (selector: string) => elementSelectorImpl(selector)),
+  type: vi.fn(async (selector: string, text: string, options?: any) => typeImpl(selector, text, options)),
+  select: vi.fn(async (selector: string, ...values: string[]) => selectImpl(selector, ...values)),
+  hover: vi.fn(async (selector: string) => hoverImpl(selector)),
+  focus: vi.fn(async (selector: string) => focusImpl(selector)),
+  keyboard: mockKeyboard,
 };
 
 const mockBrowser = {
@@ -131,6 +147,22 @@ export function setWaitForSelectorFailure(selector: string) {
   };
 }
 
+export function setTypeImpl(impl: (selector: string, text: string, options?: any) => Promise<void>) {
+  typeImpl = impl;
+}
+
+export function setSelectImpl(impl: (selector: string, ...values: string[]) => Promise<string[]>) {
+  selectImpl = impl;
+}
+
+export function setHoverImpl(impl: (selector: string) => Promise<void>) {
+  hoverImpl = impl;
+}
+
+export function setFocusImpl(impl: (selector: string) => Promise<void>) {
+  focusImpl = impl;
+}
+
 export function resetPuppeteerMock() {
   launchMock.mockClear();
   mockBrowser.newPage.mockClear();
@@ -150,6 +182,13 @@ export function resetPuppeteerMock() {
   mockPage.cookies.mockClear();
   mockPage.deleteCookie.mockClear();
   mockPage.$.mockClear();
+  mockPage.type.mockClear();
+  mockPage.select.mockClear();
+  mockPage.hover.mockClear();
+  mockPage.focus.mockClear();
+  mockKeyboard.press.mockClear();
+  mockKeyboard.down.mockClear();
+  mockKeyboard.up.mockClear();
   evaluateQueue.length = 0;
   screenshotBuffer = Buffer.from("mock-image");
   setGotoSuccess();
@@ -160,7 +199,12 @@ export function resetPuppeteerMock() {
   deleteCookieImpl = async () => undefined;
   elementSelectorImpl = async (selector: string) => ({
     screenshot: vi.fn(async () => screenshotBuffer),
+    uploadFile: vi.fn(async () => undefined),
   });
+  typeImpl = async () => undefined;
+  selectImpl = async () => [];
+  hoverImpl = async () => undefined;
+  focusImpl = async () => undefined;
 }
 
-export { launchMock, mockBrowser, mockPage };
+export { launchMock, mockBrowser, mockPage, mockKeyboard };

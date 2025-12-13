@@ -854,9 +854,10 @@ async function executeSteps(
         }
 
         case "storage": {
-          logger?.debug("step:storage", { index: i, storageType: step.storageType, action: step.action, key: step.key });
+          const storageStep = step as any;
+          logger?.debug("step:storage", { index: i, storageType: storageStep.storageType, action: storageStep.action, key: storageStep.key });
           
-          if (step.action === "get") {
+          if (storageStep.action === "get") {
             const result = await page.evaluate(
               (params: { storageType: string; key?: string }) => {
                 const storage = params.storageType === "localStorage" ? localStorage : sessionStorage;
@@ -865,10 +866,10 @@ async function executeSteps(
                 }
                 return null;
               },
-              { storageType: step.storageType, key: step.key }
+              { storageType: storageStep.storageType, key: storageStep.key }
             );
-            logger?.info("step:storage:get", { index: i, storageType: step.storageType, key: step.key, value: result });
-          } else if (step.action === "list") {
+            logger?.info("step:storage:get", { index: i, storageType: storageStep.storageType, key: storageStep.key, value: result });
+          } else if (storageStep.action === "list") {
             const keys = await page.evaluate(
               (params: { storageType: string }) => {
                 const storage = params.storageType === "localStorage" ? localStorage : sessionStorage;
@@ -881,9 +882,9 @@ async function executeSteps(
                 }
                 return keys;
               },
-              { storageType: step.storageType }
+              { storageType: storageStep.storageType }
             );
-            logger?.info("step:storage:list", { index: i, storageType: step.storageType, count: keys.length, keys });
+            logger?.info("step:storage:list", { index: i, storageType: storageStep.storageType, count: keys.length, keys });
           } else {
             await page.evaluate(
               (params: { storageType: string; action: string; key?: string; value?: string }) => {
@@ -905,14 +906,256 @@ async function executeSteps(
                     break;
                 }
               },
-              { storageType: step.storageType, action: step.action, key: step.key, value: step.value }
+              { storageType: storageStep.storageType, action: storageStep.action, key: storageStep.key, value: storageStep.value }
             );
           }
           
-          logger?.debug("step:storage:completed", { index: i, storageType: step.storageType, action: step.action });
+          logger?.debug("step:storage:completed", { index: i, storageType: storageStep.storageType, action: storageStep.action });
           stepsExecuted++;
           break;
         }
+
+        case "text": {
+          const textStep = step as any;
+          logger?.debug("step:text", { index: i, selector: textStep.selector });
+          await page.waitForSelector(textStep.selector, { timeout: 5000 });
+          
+          // Clear existing text if requested
+          if (textStep.clearFirst !== false) {
+            await page.click(textStep.selector, { clickCount: 3 });
+            await page.keyboard.press('Backspace');
+          }
+          
+          // Type the text
+          await page.type(textStep.selector, textStep.value, { delay: textStep.delay || 0 });
+          
+          // Press Enter if requested
+          if (textStep.pressEnter) {
+            await page.keyboard.press('Enter');
+          }
+          
+          logger?.debug("step:text:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "select": {
+          const selectStep = step as any;
+          logger?.debug("step:select", { index: i, selector: selectStep.selector });
+          await page.waitForSelector(selectStep.selector, { timeout: 5000 });
+          
+          if (selectStep.value !== undefined) {
+            await page.select(selectStep.selector, selectStep.value);
+          } else if (selectStep.text !== undefined) {
+            await page.evaluate((params: { selector: string; text: string }) => {
+              const select = document.querySelector(params.selector) as HTMLSelectElement;
+              if (!select) return null;
+              for (let i = 0; i < select.options.length; i++) {
+                if (select.options[i].text === params.text) {
+                  select.selectedIndex = i;
+                  select.dispatchEvent(new Event('change', { bubbles: true }));
+                  return select.options[i].value;
+                }
+              }
+              return null;
+            }, { selector: selectStep.selector, text: selectStep.text });
+          } else if (selectStep.index !== undefined) {
+            await page.evaluate((params: { selector: string; index: number }) => {
+              const select = document.querySelector(params.selector) as HTMLSelectElement;
+              if (select && select.options[params.index]) {
+                select.selectedIndex = params.index;
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+            }, { selector: selectStep.selector, index: selectStep.index });
+          }
+          
+          logger?.debug("step:select:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "radio": {
+          const radioStep = step as any;
+          logger?.debug("step:radio", { index: i, selector: radioStep.selector });
+          
+          let selector = radioStep.selector;
+          if (radioStep.value) {
+            selector += `[value="${radioStep.value}"]`;
+          }
+          if (radioStep.name) {
+            selector += `[name="${radioStep.name}"]`;
+          }
+          
+          await page.waitForSelector(selector, { timeout: 5000 });
+          await page.click(selector);
+          
+          logger?.debug("step:radio:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "checkbox": {
+          const checkboxStep = step as any;
+          logger?.debug("step:checkbox", { index: i, selector: checkboxStep.selector });
+          await page.waitForSelector(checkboxStep.selector, { timeout: 5000 });
+          
+          const isChecked = await page.evaluate((selector: string) => {
+            const checkbox = document.querySelector(selector) as HTMLInputElement;
+            return checkbox?.checked || false;
+          }, checkboxStep.selector);
+          
+          if (isChecked !== checkboxStep.checked) {
+            await page.click(checkboxStep.selector);
+          }
+          
+          logger?.debug("step:checkbox:completed", { index: i, checked: checkboxStep.checked });
+          stepsExecuted++;
+          break;
+        }
+
+        case "hover": {
+          const hoverStep = step as any;
+          logger?.debug("step:hover", { index: i, selector: hoverStep.selector });
+          await page.waitForSelector(hoverStep.selector, { timeout: 5000 });
+          await page.hover(hoverStep.selector);
+          
+          if (hoverStep.duration && hoverStep.duration > 0) {
+            await new Promise(resolve => setTimeout(resolve, hoverStep.duration));
+          }
+          
+          logger?.debug("step:hover:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "upload": {
+          const uploadStep = step as any;
+          logger?.debug("step:upload", { index: i, selector: uploadStep.selector });
+          
+          const elementHandle = await page.$(uploadStep.selector);
+          if (!elementHandle) {
+            throw new Error(`Element not found: ${uploadStep.selector}`);
+          }
+          
+          await (elementHandle as any).uploadFile(...uploadStep.filePaths);
+          
+          logger?.debug("step:upload:completed", { index: i, filesCount: uploadStep.filePaths.length });
+          stepsExecuted++;
+          break;
+        }
+
+        case "submit": {
+          const submitStep = step as any;
+          logger?.debug("step:submit", { index: i, selector: submitStep.selector });
+          await page.waitForSelector(submitStep.selector, { timeout: 5000 });
+          
+          if (submitStep.waitForNavigation !== false) {
+            await Promise.all([
+              page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
+              page.evaluate((selector: string) => {
+                const element = document.querySelector(selector);
+                if (element instanceof HTMLFormElement) {
+                  element.submit();
+                } else if (element instanceof HTMLElement) {
+                  element.click();
+                }
+              }, submitStep.selector)
+            ]);
+          } else {
+            await page.evaluate((selector: string) => {
+              const element = document.querySelector(selector);
+              if (element instanceof HTMLFormElement) {
+                element.submit();
+              } else if (element instanceof HTMLElement) {
+                element.click();
+              }
+            }, submitStep.selector);
+          }
+          
+          logger?.debug("step:submit:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "keypress": {
+          const keypressStep = step as any;
+          logger?.debug("step:keypress", { index: i, key: keypressStep.key });
+          
+          if (keypressStep.selector) {
+            await page.click(keypressStep.selector);
+          }
+          
+          if (keypressStep.modifiers && keypressStep.modifiers.length > 0) {
+            for (const modifier of keypressStep.modifiers) {
+              await page.keyboard.down(modifier);
+            }
+            await page.keyboard.press(keypressStep.key);
+            for (const modifier of keypressStep.modifiers.reverse()) {
+              await page.keyboard.up(modifier);
+            }
+          } else {
+            await page.keyboard.press(keypressStep.key);
+          }
+          
+          logger?.debug("step:keypress:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "focus": {
+          const focusStep = step as any;
+          logger?.debug("step:focus", { index: i, selector: focusStep.selector });
+          await page.focus(focusStep.selector);
+          logger?.debug("step:focus:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "blur": {
+          const blurStep = step as any;
+          logger?.debug("step:blur", { index: i, selector: blurStep.selector });
+          await page.evaluate((selector: string) => {
+            const element = document.querySelector(selector) as HTMLElement;
+            element?.blur();
+          }, blurStep.selector);
+          logger?.debug("step:blur:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "clear": {
+          const clearStep = step as any;
+          logger?.debug("step:clear", { index: i, selector: clearStep.selector });
+          await page.click(clearStep.selector, { clickCount: 3 });
+          await page.keyboard.press('Backspace');
+          logger?.debug("step:clear:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "evaluate": {
+          const evaluateStep = step as any;
+          logger?.debug("step:evaluate", { index: i });
+          
+          let result;
+          if (evaluateStep.selector) {
+            result = await page.evaluate((params: { script: string; selector: string }) => {
+              const element = document.querySelector(params.selector);
+              const func = new Function('element', params.script);
+              return func(element);
+            }, { script: evaluateStep.script, selector: evaluateStep.selector });
+          } else {
+            result = await page.evaluate(evaluateStep.script);
+          }
+          
+          logger?.debug("step:evaluate:completed", { index: i, result });
+          stepsExecuted++;
+          break;
+        }
+
+        default:
+          logger?.warn("step:unsupported", { index: i, type: (step as any).type });
+          break;
       }
     } catch (error) {
       logger?.warn("step:failed", {

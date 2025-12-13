@@ -118,7 +118,130 @@ export interface StorageActionStep {
   value?: string;
 }
 
-export type ActionStep = DelayStep | ClickStep | ScrollStep | WaitForSelectorStep | ScreenshotStep | CookieActionStep | StorageActionStep;
+export interface TextInputStep {
+  type: "text";
+  /** CSS selector for the input element */
+  selector: string;
+  /** Text to type */
+  value: string;
+  /** Clear existing text first (default: true) */
+  clearFirst?: boolean;
+  /** Delay between keystrokes in ms (0-1000) */
+  delay?: number;
+  /** Press Enter after typing (default: false) */
+  pressEnter?: boolean;
+}
+
+export interface SelectStep {
+  type: "select";
+  /** CSS selector for the select element */
+  selector: string;
+  /** Select by value */
+  value?: string;
+  /** Select by visible text */
+  text?: string;
+  /** Select by index */
+  index?: number;
+}
+
+export interface RadioStep {
+  type: "radio";
+  /** CSS selector for the radio button */
+  selector: string;
+  /** Value attribute of the radio button */
+  value?: string;
+  /** Name attribute to identify the radio group */
+  name?: string;
+}
+
+export interface CheckboxStep {
+  type: "checkbox";
+  /** CSS selector for the checkbox */
+  selector: string;
+  /** Whether to check (true) or uncheck (false) */
+  checked: boolean;
+}
+
+export interface HoverStep {
+  type: "hover";
+  /** CSS selector for the element to hover over */
+  selector: string;
+  /** How long to maintain hover in ms (0-10000) */
+  duration?: number;
+}
+
+export interface FileUploadStep {
+  type: "upload";
+  /** CSS selector for the file input element */
+  selector: string;
+  /** File paths to upload */
+  filePaths: string[];
+}
+
+export interface FormSubmitStep {
+  type: "submit";
+  /** CSS selector for the form or submit button */
+  selector: string;
+  /** Wait for page navigation after submit (default: true) */
+  waitForNavigation?: boolean;
+}
+
+export interface KeyPressStep {
+  type: "keypress";
+  /** Key to press (e.g., "Enter", "Tab", "Escape", "ArrowDown") */
+  key: string;
+  /** Optional modifiers ("Control", "Shift", "Alt", "Meta") */
+  modifiers?: string[];
+  /** Optional element to focus first */
+  selector?: string;
+}
+
+export interface FocusStep {
+  type: "focus";
+  /** CSS selector for the element to focus */
+  selector: string;
+}
+
+export interface BlurStep {
+  type: "blur";
+  /** CSS selector for the element to blur */
+  selector: string;
+}
+
+export interface ClearStep {
+  type: "clear";
+  /** CSS selector for the input element to clear */
+  selector: string;
+}
+
+export interface EvaluateStep {
+  type: "evaluate";
+  /** JavaScript code to execute */
+  script: string;
+  /** Optional selector to pass element to the script */
+  selector?: string;
+}
+
+export type ActionStep = 
+  | DelayStep 
+  | ClickStep 
+  | ScrollStep 
+  | WaitForSelectorStep 
+  | ScreenshotStep 
+  | CookieActionStep 
+  | StorageActionStep
+  | TextInputStep
+  | SelectStep
+  | RadioStep
+  | CheckboxStep
+  | HoverStep
+  | FileUploadStep
+  | FormSubmitStep
+  | KeyPressStep
+  | FocusStep
+  | BlurStep
+  | ClearStep
+  | EvaluateStep;
 
 export interface CaptureScreenshotInput {
   url: string;
