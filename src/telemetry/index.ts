@@ -5,6 +5,7 @@ export type TelemetryEventType =
   | "tool.invoked"
   | "tool.completed"
   | "tool.failed"
+  | "tool.validated"
   | "navigation.started"
   | "navigation.completed"
   | "navigation.failed"

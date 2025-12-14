@@ -521,12 +521,63 @@ export const VIEWPORT_PRESETS: Record<string, ViewportProfile> = {
   },
 };
 
+/**
+ * Device aliases mapping generic/short names to actual presets.
+ * These allow LLMs to use simple names like "mobile" instead of specific device names.
+ */
+export const DEVICE_ALIASES: Record<string, string> = {
+  // Generic aliases (map to latest devices)
+  "mobile": "iphone-16-pro",
+  "tablet": "ipad-pro-13",
+  "desktop": "desktop-fhd",
+  // Shorthand aliases
+  "ipad-pro": "ipad-pro-13",
+  "ipad-air": "ipad-air-13",
+  "macbook-air": "macbook-air-15",
+  "iphone-14": "iphone-15",  // Map to closest current model
+  "pixel-9": "pixel-9",
+  "galaxy-s24": "galaxy-s24",
+  // Legacy aliases (for backward compatibility)
+  "phone": "iphone-16-pro",
+  "smartphone": "iphone-16-pro",
+  "laptop": "macbook-pro-16",
+  "iphone": "iphone-16-pro",
+  "ipad": "ipad-pro-13",
+  "pixel": "pixel-9",
+  "galaxy": "galaxy-s24",
+  "android": "pixel-9",
+};
+
+/**
+ * Get viewport preset by name, supporting aliases.
+ * Returns undefined if preset not found.
+ */
 export function getViewportPreset(name: string): ViewportPreset | undefined {
-  return VIEWPORT_PRESETS[name]?.preset;
+  const normalizedName = name.toLowerCase().trim();
+  // Check for alias first
+  const resolvedName = DEVICE_ALIASES[normalizedName] || normalizedName;
+  return VIEWPORT_PRESETS[resolvedName]?.preset;
 }
 
+/**
+ * List all available viewport preset names.
+ * Includes both actual presets and aliases.
+ */
 export function listViewportPresets(): string[] {
   return Object.keys(VIEWPORT_PRESETS);
+}
+
+/**
+ * List recommended device presets for LLM usage (top 15).
+ */
+export function listRecommendedPresets(): string[] {
+  return [
+    "mobile", "tablet", "desktop",
+    "iphone-16-pro", "iphone-14", "pixel-9", "galaxy-s24",
+    "ipad-pro", "ipad-air", "surface-pro",
+    "desktop-fhd", "desktop-hd", "desktop-4k",
+    "macbook-pro-16", "macbook-air"
+  ];
 }
 
 export function mergeViewportOptions(preset: ViewportPreset, overrides?: Partial<ViewportPreset>): ViewportPreset {

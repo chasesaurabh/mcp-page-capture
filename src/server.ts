@@ -16,6 +16,44 @@ export interface CreateServerResult {
   logger: Logger;
 }
 
+/**
+ * MCP Server Instructions - Embedded LLM Reference
+ * This is always available to LLMs using this server
+ */
+const MCP_INSTRUCTIONS = `# MCP Page-Capture Server
+
+## captureScreenshot
+Capture webpage screenshot with optional interactions.
+
+**Params:** url (required), steps (optional), headers (optional), validate (optional)
+
+**6 Steps (order auto-fixed, screenshot auto-added):**
+
+| Step | Key Params | Example |
+|------|------------|---------|
+| viewport | device | { "type": "viewport", "device": "mobile" } |
+| wait | for OR duration | { "type": "wait", "for": ".loaded" } or { "type": "wait", "duration": 2000 } |
+| fill | target, value | { "type": "fill", "target": "#email", "value": "a@b.com" } |
+| click | target, waitFor | { "type": "click", "target": "#btn", "waitFor": ".result" } |
+| scroll | to or y | { "type": "scroll", "to": "#footer" } |
+| screenshot | fullPage, element | { "type": "screenshot", "fullPage": true } |
+
+**Composite Patterns (expand automatically):**
+- login: { "type": "login", "email": { "selector": "#email", "value": "..." }, "password": { "selector": "#pass", "value": "..." }, "submit": "#btn", "successIndicator": ".dashboard" }
+- search: { "type": "search", "input": "#search", "query": "...", "resultsIndicator": ".results" }
+
+**Devices:** mobile, tablet, desktop, iphone-16-pro, pixel-9, galaxy-s24, ipad-pro
+
+**Error Recovery:**
+- ELEMENT_NOT_FOUND → Add { "type": "wait", "for": "<selector>" } BEFORE failing step
+- ELEMENT_NOT_VISIBLE → Add { "type": "scroll", "to": "<selector>" } BEFORE failing step
+
+## extractDom
+Extract HTML/text/DOM structure. Use for text analysis or selector discovery.
+
+**Params:** url (required), selector (optional - scope extraction)
+`;
+
 export function createPageCaptureServer(options: CreateServerOptions = {}): CreateServerResult {
   const resolvedLevel = (process.env.LOG_LEVEL as LogLevel) || "info";
   const logger = options.logger ?? createLogger(resolvedLevel);
@@ -26,7 +64,7 @@ export function createPageCaptureServer(options: CreateServerOptions = {}): Crea
       version: packageJson.version,
     },
     {
-      instructions: "Capture high-fidelity webpage screenshots with optional full-page rendering.",
+      instructions: MCP_INSTRUCTIONS,
     },
   );
 

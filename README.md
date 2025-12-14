@@ -12,16 +12,17 @@ mcp-page-capture is a Model Context Protocol (MCP) server that orchestrates head
 
 ## Features
 - 📸 High-fidelity screenshots powered by Puppeteer and headless Chromium
-- ⚙️ Declarative MCP tool schema for predictable integrations and strong validation
+- ⚙️ **LLM-optimized schema** with minimal parameters exposed and sensible defaults
 - 🔍 Structured DOM extraction with optional CSS selectors for AI-friendly consumption
-- 📱 Advanced viewport presets and mobile emulation profiles (iPhone, iPad, Android, desktop)
-- 🎯 Unified steps system for all page interactions (click, scroll, type, etc.)
+- 📱 Device presets for mobile emulation (iPhone, iPad, Android, desktop)
+- 🎯 **6 simplified steps** for LLM friendliness: `viewport`, `wait`, `fill`, `click`, `scroll`, `screenshot`
+- 🤖 **Smart defaults** - screenshot auto-captured, field types auto-detected
+- 🆕 **Consistent parameters** - `target` for elements, `for` for waiting, `to` for scrolling, `device` for viewport
 - 🔄 Automatic retry with exponential backoff for transient failures
 - 📊 Telemetry hooks for centralized observability and monitoring
 - 💾 Pluggable storage backends (local filesystem, S3, memory)
 - 🛡️ Structured logging plus defensive error handling for operational visibility
 - 🔌 Launch via `npm start`, `npm run dev`, or as a long-lived MCP sidecar
-- 🧩 Configurable options for target URL selection and full-page captures
 - 🐳 Docker image with multi-platform support (amd64, arm64)
 
 ## How It Works
@@ -35,6 +36,63 @@ mcp-page-capture is a Model Context Protocol (MCP) server that orchestrates head
 - npm ≥ 9.x
 - Chromium package download permissions (first run)
 - Network access to the target URLs
+
+## 🌟 LLM-Friendly Features
+
+### Simplified Schema (5-Star LLM Rating)
+- ✅ Only 4 top-level parameters: `url`, `steps`, `headers`, `validate`
+- ✅ Exactly 6 step types (no more, no less)
+- ✅ Consistent parameter naming across all steps
+- ✅ Automatic screenshot if omitted
+- ✅ Smart field type detection
+- ✅ Actionable error messages with recovery suggestions
+- ✅ Single source of truth for all schemas
+- ✅ Deprecation warnings for legacy parameters
+- ✅ **NEW**: Validate mode for pre-flight step checking
+- ✅ **NEW**: Step order enforcement with auto-correction
+- ✅ **NEW**: Embedded LLM reference in MCP server instructions
+
+### Quick Start for LLMs
+
+See **[LLM Quick Reference](docs/LLM_REFERENCE.md)** for the 6 primary step types and common patterns.
+
+For advanced features, see **[Advanced Steps](docs/ADVANCED_STEPS.md)**.
+
+### The 6 Step Types (Exactly 6, No More)
+
+| Step | Purpose | Key Parameters | Example |
+|------|---------|----------------|--------|
+| `viewport` | Set device | `device`, `width`, `height` | `{ "type": "viewport", "device": "mobile" }` |
+| `wait` | Wait for element/time | `for` OR `duration`, `timeout` | `{ "type": "wait", "for": ".loaded" }` |
+| `fill` | Fill form field | `target`, `value`, `submit` | `{ "type": "fill", "target": "#email", "value": "a@b.com" }` |
+| `click` | Click element | `target`, `waitFor` | `{ "type": "click", "target": "button", "waitFor": ".result" }` |
+| `scroll` | Scroll page | `to`, `y` | `{ "type": "scroll", "to": "#footer" }` |
+| `screenshot` | Capture (auto-added) | `fullPage`, `element` | `{ "type": "screenshot", "fullPage": true }` |
+
+**Step Order**: Auto-fixed! `viewport` auto-moves to first, `screenshot` auto-added at end.
+
+### Composite Patterns (NEW)
+
+High-level patterns that auto-expand to multiple steps:
+
+```json
+// Login pattern
+{
+  "type": "login",
+  "email": { "selector": "#email", "value": "user@example.com" },
+  "password": { "selector": "#password", "value": "secret" },
+  "submit": "button[type=submit]",
+  "successIndicator": ".dashboard"
+}
+
+// Search pattern  
+{
+  "type": "search",
+  "input": "#search-box",
+  "query": "MCP protocol",
+  "resultsIndicator": ".search-results"
+}
+```
 
 ## Installation
 
@@ -101,14 +159,46 @@ await startMcpPageCaptureServer();
 
 ### Tool invocation examples
 
-#### Basic Screenshot (using steps)
+#### Basic Screenshot
 ```json
 {
-  "server": "page-capture",
+  "tool": "captureScreenshot",
+  "params": {
+    "url": "https://example.com"
+  }
+}
+```
+> Note: A screenshot is automatically captured at the end if no explicit screenshot step is provided.
+
+#### Search with Fill Step (Recommended)
+The `fill` step auto-detects field types and handles text inputs, selects, checkboxes, and radio buttons.
+
+```json
+{
   "tool": "captureScreenshot",
   "params": {
     "url": "https://example.com",
     "steps": [
+      { "type": "fill", "target": "#search", "value": "MCP protocol", "submit": true },
+      { "type": "wait", "for": ".search-results" },
+      { "type": "screenshot" }
+    ]
+  }
+}
+```
+
+#### Login Form Example
+```json
+{
+  "tool": "captureScreenshot",
+  "params": {
+    "url": "https://example.com/login",
+    "steps": [
+      { "type": "wait", "for": "#login-form" },
+      { "type": "fill", "target": "#email", "value": "user@example.com" },
+      { "type": "fill", "target": "#password", "value": "secretpassword" },
+      { "type": "fill", "target": "#remember-me", "value": "true" },
+      { "type": "click", "target": "button[type=submit]", "waitFor": ".dashboard" },
       { "type": "screenshot" }
     ]
   }
@@ -118,13 +208,11 @@ await startMcpPageCaptureServer();
 #### Full Page Screenshot
 ```json
 {
-  "server": "page-capture",
   "tool": "captureScreenshot",
   "params": {
     "url": "https://docs.modelcontextprotocol.io",
     "steps": [
-      { "type": "fullPage", "enabled": true },
-      { "type": "screenshot" }
+      { "type": "screenshot", "fullPage": true }
     ]
   }
 }
@@ -133,7 +221,6 @@ await startMcpPageCaptureServer();
 #### With Authentication and Cookies
 ```json
 {
-  "server": "page-capture",
   "tool": "captureScreenshot",
   "params": {
     "url": "https://example.com/dashboard",
@@ -154,9 +241,9 @@ await startMcpPageCaptureServer();
 }
 ```
 
+#### Extract DOM Content
 ```json
 {
-  "server": "page-capture",
   "tool": "extractDom",
   "params": {
     "url": "https://docs.modelcontextprotocol.io",
@@ -165,80 +252,92 @@ await startMcpPageCaptureServer();
 }
 ```
 
-#### Complex Interaction Flow
-```json
-{
-  "server": "page-capture",
-  "tool": "captureScreenshot",
-  "params": {
-    "url": "https://example.com/form",
-    "steps": [
-      { "type": "viewport", "preset": "iphone-14" },
-      { "type": "cookie", "action": "set", "name": "consent", "value": "accepted" },
-      { "type": "text", "selector": "#username", "value": "john.doe@example.com" },
-      { "type": "text", "selector": "#password", "value": "secure123" },
-      { "type": "click", "selector": "button[type='submit']", "waitForNavigation": true },
-      { "type": "waitForSelector", "selector": ".dashboard" },
-      { "type": "fullPage", "enabled": true },
-      { "type": "screenshot" }
-    ]
-  }
-}
-```
-
 #### Mobile Device Emulation
 ```json
 {
-  "server": "page-capture",
   "tool": "captureScreenshot",
   "params": {
     "url": "https://example.com",
     "steps": [
-      {
-        "type": "viewport",
-        "preset": "ipad-pro",
-        "isLandscape": true
-      },
-      { "type": "scroll", "y": 500 },
+      { "type": "viewport", "device": "ipad-pro" },
+      { "type": "scroll", "to": "#main-content" },
       { "type": "screenshot" }
     ]
   }
 }
 ```
 
-### Supported Step Types
+### Step Types
 
-| Step Type | Description | Key Parameters |
-|-----------|-------------|----------------|
-| `viewport` | Configure browser viewport | `preset`, `width`, `height`, `isMobile` |
-| `fullPage` | Enable/disable full page capture | `enabled` |
-| `cookie` | Manage cookies | `action`, `name`, `value` |
-| `screenshot` | Capture screenshot | `fullPage`, `selector` |
-| `click` | Click an element | `selector`, `button`, `waitForNavigation` |
-| `scroll` | Scroll the page | `x`, `y`, `selector`, `behavior` |
-| `text` | Type text into input | `selector`, `value`, `clearFirst` |
-| `select` | Select dropdown option | `selector`, `value`, `text`, `index` |
-| `checkbox` | Check/uncheck checkbox | `selector`, `checked` |
-| `radio` | Select radio button | `selector`, `value`, `name` |
-| `hover` | Hover over element | `selector`, `duration` |
-| `waitForSelector` | Wait for element | `selector`, `timeout` |
-| `delay` | Pause execution | `duration` |
-| `keypress` | Press keyboard key | `key`, `modifiers` |
-| `focus` | Focus element | `selector` |
-| `blur` | Blur element | `selector` |
-| `clear` | Clear input field | `selector` |
-| `upload` | Upload files | `selector`, `filePaths` |
-| `submit` | Submit form | `selector`, `waitForNavigation` |
-| `evaluate` | Execute JavaScript | `script`, `selector` |
-| `storage` | Manage localStorage/sessionStorage | `storageType`, `action`, `key`, `value` |
+#### 6 Primary Steps (LLM-Exposed)
+
+These are the **only** steps exposed to LLMs. They cover 95%+ of use cases:
+
+| Step | Purpose | Parameters |
+|------|---------|------------|
+| `viewport` | Set device/screen size | `device`, `width`, `height` |
+| `wait` | Wait for element/time | `for` OR `duration`, `timeout` |
+| `fill` | Fill form field | `target`, `value`, `submit` |
+| `click` | Click element | `target`, `waitFor` |
+| `scroll` | Scroll page | `to` (selector), `y` (pixels) |
+| `screenshot` | Capture (auto-added) | `fullPage`, `element` |
+
+#### Validate Mode (NEW)
+
+Use `validate: true` to check steps before execution:
+
+```json
+{
+  "tool": "captureScreenshot",
+  "params": {
+    "url": "https://example.com",
+    "steps": [
+      { "type": "fill", "target": "#email", "value": "test@example.com" },
+      { "type": "click", "target": "button" }
+    ],
+    "validate": true
+  }
+}
+```
+
+Returns validation analysis including:
+- **Errors**: Missing required parameters
+- **Warnings**: Step order issues (e.g., viewport not first)
+- **Suggestions**: Recommended improvements (e.g., add `waitFor` to click)
+- **Step analysis**: Per-step status and notes
+
+#### Deprecated Steps (Legacy Support Only)
+
+These work at runtime but are **not exposed in the LLM schema**. Use the 6 primary steps instead:
+
+| Deprecated | Use Instead |
+|------------|-------------|
+| `quickFill` | `fill` with `submit: true` |
+| `fillForm` | Multiple `fill` steps |
+| `waitForSelector` | `wait` with `for` parameter |
+| `delay` | `wait` with `duration` parameter |
+| `fullPage` | `screenshot` with `fullPage: true` |
+
+#### Internal Steps (Not Exposed)
+
+These are for power users only and are not documented in the tool schema:
+
+`type`, `hover`, `cookie`, `storage`, `evaluate`, `keypress`, `focus`, `blur`, `clear`, `upload`, `submit`
 
 ### Legacy Parameter Support
 
-For backward compatibility, the following parameters are still supported but deprecated:
-- `cookies` - Use `{ type: "cookie", action: "set", ... }` steps instead  
-- `viewport` - Use `{ type: "viewport", ... }` step instead
-- `scroll` - Use `{ type: "scroll", ... }` step instead
-- `clickActions` - Use `{ type: "click", ... }` steps instead
+For backward compatibility, these parameters work at runtime but are **not exposed in the LLM schema**:
+
+| Legacy Parameter | Canonical | Notes |
+|-----------------|-----------|-------|
+| `selector` | `target` | Use `target` for element selectors |
+| `awaitElement` | `for` | Use `for` in wait steps |
+| `scrollTo` | `to` | Use `to` in scroll steps |
+| `preset` | `device` | Use `device` in viewport steps |
+| `captureElement` | `element` | Use `element` in screenshot steps |
+| `waitAfter` | `wait` | Use `wait` in click steps |
+
+**Deprecation warnings** are logged when legacy parameters are used.
 
 ### Example response
 ```json
@@ -290,6 +389,40 @@ For backward compatibility, the following parameters are still supported but dep
 
 The `captureScreenshot` tool supports a comprehensive `steps` array that allows you to perform various web interactions before capturing the screenshot. Each step is executed in sequence, allowing for complex automation scenarios.
 
+### Fill Form (`fillForm`) - Recommended for Form Interactions
+The `fillForm` step is the easiest and most LLM-friendly way to interact with forms. It auto-detects field types and handles multiple fields in a single step.
+
+```json
+{
+  "type": "fillForm",
+  "fields": [
+    { "selector": "#email", "value": "user@example.com" },
+    { "selector": "#password", "value": "secretpassword" },
+    { "selector": "#country", "value": "us" },
+    { "selector": "#newsletter", "value": "true" },
+    { "selector": "#plan", "value": "premium", "type": "radio" }
+  ],
+  "formSelector": "#signup-form",
+  "submit": true,
+  "submitSelector": "#submit-btn",
+  "waitForNavigation": true
+}
+```
+
+#### Field Configuration
+Each field in the `fields` array supports:
+- `selector` (required): CSS selector for the form field
+- `value` (required): Value to set. For checkboxes use `"true"` or `"false"`. For selects/radios use the value attribute.
+- `type` (optional): Field type hint (`text`, `select`, `checkbox`, `radio`, `textarea`, `password`, `email`, `number`, `tel`, `url`, `date`, `file`). Auto-detected if not specified.
+- `matchByText` (optional): For select fields, match by visible text instead of value attribute
+- `delay` (optional): Delay between keystrokes in ms (for text inputs)
+
+#### Form Options
+- `formSelector` (optional): CSS selector for the form container (for scoping field selectors)
+- `submit` (optional): Whether to submit the form after filling (default: false)
+- `submitSelector` (optional): Selector for submit button. If not specified, uses form.submit() or looks for `[type="submit"]`
+- `waitForNavigation` (optional): Whether to wait for navigation after submit (default: true)
+
 ### Text Input (`text`)
 Type text into input fields:
 ```json
@@ -339,7 +472,7 @@ Click on elements:
 ```json
 {
   "type": "click",
-  "selector": "button.submit",
+  "target": "button.submit",
   "button": "left",  // "left", "right", or "middle" (default: left)
   "clickCount": 1,  // 1=single, 2=double, 3=triple (default: 1)
   "waitForNavigation": false,  // Wait for page navigation (default: false)
@@ -382,7 +515,7 @@ Scroll the page:
 ```json
 {
   "type": "scroll",
-  "selector": "#section-2",  // Scroll to element (takes precedence)
+  "scrollTo": "#section-2",  // Scroll to element (takes precedence)
   "x": 0,  // OR horizontal scroll position in pixels
   "y": 500,  // OR vertical scroll position in pixels
   "behavior": "smooth"  // "auto" or "smooth" (default: auto)
@@ -400,23 +533,16 @@ Press keyboard keys:
 }
 ```
 
-### Wait for Selector (`waitForSelector`)
-Wait for element to appear:
+### Wait for Selector (`waitForSelector`) - DEPRECATED
+Use `wait` step instead:
 ```json
-{
-  "type": "waitForSelector",
-  "selector": ".loading-complete",
-  "timeout": 10000  // Timeout in ms (default: 10000)
-}
+{ "type": "wait", "for": ".loading-complete", "timeout": 10000 }
 ```
 
-### Delay (`delay`)
-Wait for specified duration:
+### Delay (`delay`) - DEPRECATED
+Use `wait` step with `duration` instead:
 ```json
-{
-  "type": "delay",
-  "duration": 2000  // Wait duration in ms
-}
+{ "type": "wait", "duration": 2000 }
 ```
 
 ### Focus (`focus`)
@@ -462,16 +588,16 @@ Capture screenshot at any point:
 {
   "type": "screenshot",
   "fullPage": true,  // Capture entire page (optional)
-  "selector": ".specific-element"  // Capture specific element (optional)
+  "captureElement": ".specific-element"  // Capture specific element (optional)
 }
 ```
 
 ### Cookie Management (`cookie`)
-Manage browser cookies:
+Set or delete browser cookies:
 ```json
 {
   "type": "cookie",
-  "action": "set",  // "set", "delete", "get", or "list"
+  "action": "set",
   "name": "session_id",
   "value": "abc123",
   "domain": ".example.com",
@@ -479,18 +605,20 @@ Manage browser cookies:
   "secure": true
 }
 ```
+Supported actions: `set` (add/update cookie), `delete` (remove cookie).
 
 ### Storage Management (`storage`)
 Manage localStorage/sessionStorage:
 ```json
 {
   "type": "storage",
-  "storageType": "localStorage",  // or "sessionStorage"
-  "action": "set",  // "set", "delete", "clear", "get", or "list"
+  "storageType": "localStorage",
+  "action": "set",
   "key": "user_preferences",
   "value": "{\"theme\":\"dark\"}"
 }
 ```
+Supported actions: `set` (add/update), `delete` (remove key), `clear` (remove all items).
 
 ### Example: Complex Form Interaction with Screenshot
 ```json
@@ -499,7 +627,7 @@ Manage localStorage/sessionStorage:
   "params": {
     "url": "https://example.com/signup",
     "steps": [
-      { "type": "waitForSelector", "selector": "#signup-form" },
+      { "type": "waitForSelector", "awaitElement": "#signup-form" },
       { "type": "text", "selector": "#email", "value": "user@example.com" },
       { "type": "text", "selector": "#password", "value": "SecurePass123!" },
       { "type": "select", "selector": "#country", "text": "United States" },
@@ -508,13 +636,24 @@ Manage localStorage/sessionStorage:
       { "type": "checkbox", "selector": "#terms", "checked": true },
       { "type": "hover", "selector": ".tooltip-trigger", "duration": 500 },
       { "type": "scroll", "y": 200 },
-      { "type": "click", "selector": "button[type='submit']", "waitForNavigation": true },
+      { "type": "click", "target": "button[type='submit']", "waitForNavigation": true },
       { "type": "delay", "duration": 2000 },
       { "type": "screenshot", "fullPage": true }
     ]
   }
 }
 ```
+
+## Troubleshooting
+
+If your capture fails, use these guidelines:
+
+| Error | Solution |
+|-------|----------|
+| "element not found" | Check CSS selector, add `waitForSelector` before `click`/`fillForm` |
+| "navigation timeout" | Increase `retryPolicy.maxRetries` or add `delay` step |
+| "page not loaded" | Add `waitForSelector` or `delay` before `screenshot` |
+| "click failed" | Ensure element is visible, add `scroll` to bring it into view |
 
 ## Viewport Presets
 

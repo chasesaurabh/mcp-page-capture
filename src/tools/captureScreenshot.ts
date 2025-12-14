@@ -4,7 +4,7 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { Logger } from "../logger.js";
-import type { CaptureScreenshotInput, CaptureScreenshotResult, ScreenshotMetadata, ViewportConfig, RetryConfig, ScrollConfig, ClickAction, ActionStep, ScreenshotStep, CookieActionStep, StorageActionStep, ViewportStep, FullPageStep, CaptureCookieInput } from "../types/screenshot.js";
+import type { CaptureScreenshotInput, CaptureScreenshotResult, ScreenshotMetadata, ViewportConfig, RetryConfig, ScrollConfig, ClickAction, ActionStep, ScreenshotStep, CookieActionStep, StorageActionStep, ViewportStep, FullPageStep, CaptureCookieInput, FillFormStep, FormFieldInput, QuickFillStep } from "../types/screenshot.js";
 import { normalizeHeadersInput, toPuppeteerCookies } from "../utils/requestOptions.js";
 import { normalizeUrl } from "../utils/url.js";
 import { withRetry, type RetryPolicy } from "../utils/retry.js";
@@ -12,262 +12,345 @@ import { getViewportPreset, mergeViewportOptions, type ViewportPreset } from "..
 import { getGlobalTelemetry } from "../telemetry/index.js";
 import { getStorageTarget, getDefaultStorageTarget } from "../storage/index.js";
 import { withTimeout, safeBrowserClose, TimeoutError } from "../utils/timeout.js";
+import { LLM_ERRORS, formatErrorResponse, createLLMError, formatErrorForMCP, type LLMErrorResponse } from "../utils/errors.js";
+import { normalizeDeviceName, validateSelector, autoFixParameters, convertSimpleParamsToSteps, mergeLegacyIntoSteps, normalizeAllSteps, normalizeUrlInput, collectDeprecationWarnings } from "../utils/normalize.js";
+import { normalizeStepsArray } from "../utils/stepMapper.js";
+import { validateAndFixSteps } from "../utils/validate.js";
+import { validateStepOrder, performStepValidation, formatValidateResult } from "../utils/stepOrder.js";
+
+// Import from centralized schema - Single Source of Truth
+import {
+  llmStepSchema,
+  runtimeStepSchema,
+  headersSchema,
+  cookieSchema,
+  CAPTURE_SCREENSHOT_DESCRIPTION,
+} from "../schemas/index.js";
 
 const CAPTURE_TIMEOUT_MS = 45_000;
 const BROWSER_CLOSE_TIMEOUT_MS = 5_000;
 const MASTER_TIMEOUT_MS = 60_000;
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 } as const;
 
-const headersSchema = z
-  .record(z.string().min(1, "Header names cannot be empty."), z.string().min(1, "Header values cannot be empty."))
-  .optional()
-  .describe("Custom HTTP headers to send with the request.");
+// Step execution tracking
+interface StepExecutionInfo {
+  type: string;
+  target?: string;
+  success: boolean;
+  error?: string;
+}
 
-const cookieSchema = z.object({
-  name: z.string({ required_error: "Cookie name is required." }).min(1, "Cookie name cannot be empty.").describe("The name of the cookie."),
-  value: z.string({ required_error: "Cookie value is required." }).describe("The value of the cookie."),
-  url: z
-    .string()
-    .optional()
-    .describe("The URL to associate with the cookie. If omitted, the target URL is used.")
-    .transform((value, ctx) => {
-      if (!value) return value;
-      try {
-        return normalizeUrl(value);
-      } catch {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Invalid cookie URL.",
-        });
-        return z.NEVER;
-      }
-    }),
-  domain: z.string().optional().describe("The domain the cookie applies to."),
-  path: z.string().optional().describe("The path the cookie applies to."),
-  secure: z.boolean().optional().describe("Whether the cookie is secure (HTTPS only)."),
-  httpOnly: z.boolean().optional().describe("Whether the cookie is HTTP-only (not accessible via JavaScript)."),
-  sameSite: z.enum(["Strict", "Lax", "None"]).optional().describe("The SameSite attribute of the cookie."),
-  expires: z.number().optional().describe("Unix timestamp (in seconds) when the cookie expires."),
-}).describe("A cookie to set before loading the page.");
-
+// Legacy schemas for backward compatibility (runtime only, not exposed to LLMs)
 const viewportSchema = z.object({
-  preset: z.string().optional().describe("Device preset name (e.g., 'iphone-14', 'desktop-hd', 'ipad-pro')."),
-  width: z.number().positive().optional().describe("Viewport width in pixels. Overrides preset width if specified."),
-  height: z.number().positive().optional().describe("Viewport height in pixels. Overrides preset height if specified."),
-  deviceScaleFactor: z.number().positive().optional().describe("Device scale factor (DPR). Defaults to 1."),
-  isMobile: z.boolean().optional().describe("Whether to emulate a mobile device."),
-  hasTouch: z.boolean().optional().describe("Whether the device supports touch events."),
-  isLandscape: z.boolean().optional().describe("Whether the viewport is in landscape orientation."),
-  userAgent: z.string().optional().describe("Custom User-Agent string to use."),
-}).optional().describe("Viewport configuration or device preset for rendering.");
+  preset: z.string().optional(),
+  width: z.number().positive().optional(),
+  height: z.number().positive().optional(),
+  deviceScaleFactor: z.number().positive().optional(),
+  isMobile: z.boolean().optional(),
+  hasTouch: z.boolean().optional(),
+  isLandscape: z.boolean().optional(),
+  userAgent: z.string().optional(),
+}).optional();
 
 const retryPolicySchema = z.object({
-  maxRetries: z.number().min(0).max(10).optional().describe("Maximum number of retry attempts (0-10). Defaults to 3."),
-  initialDelayMs: z.number().positive().optional().describe("Initial delay in milliseconds before the first retry."),
-  maxDelayMs: z.number().positive().optional().describe("Maximum delay in milliseconds between retries."),
-  backoffMultiplier: z.number().min(1).optional().describe("Multiplier for exponential backoff (e.g., 2 doubles delay each retry)."),
-  retryableStatusCodes: z.array(z.number()).optional().describe("HTTP status codes that should trigger a retry (e.g., [429, 503])."),
-  retryableErrors: z.array(z.string()).optional().describe("Error message patterns that should trigger a retry."),
-}).optional().describe("Retry policy configuration for handling transient failures.");
+  maxRetries: z.number().min(0).max(10).optional(),
+  initialDelayMs: z.number().positive().optional(),
+  maxDelayMs: z.number().positive().optional(),
+  backoffMultiplier: z.number().min(1).optional(),
+  retryableStatusCodes: z.array(z.number()).optional(),
+  retryableErrors: z.array(z.string()).optional(),
+}).optional();
 
 const scrollSchema = z.object({
-  x: z.number().min(0).optional().describe("Horizontal scroll position in pixels."),
-  y: z.number().min(0).optional().describe("Vertical scroll position in pixels."),
-  selector: z.string().min(1).optional().describe("CSS selector of an element to scroll into view. Takes precedence over x/y coordinates."),
-  behavior: z.enum(["auto", "smooth"]).optional().describe("Scroll behavior: 'auto' for instant, 'smooth' for animated scrolling."),
-}).optional().describe("Scroll position configuration before capturing the screenshot.");
+  x: z.number().min(0).optional(),
+  y: z.number().min(0).optional(),
+  selector: z.string().min(1).optional(),
+  behavior: z.enum(["auto", "smooth"]).optional(),
+}).optional();
 
 const clickActionSchema = z.object({
-  selector: z.string().min(1, "Click selector cannot be empty.").describe("CSS selector of the element to click."),
-  delayBefore: z.number().min(0).max(30000).optional().describe("Delay in milliseconds before clicking (max 30000)."),
-  delayAfter: z.number().min(0).max(30000).optional().describe("Delay in milliseconds after clicking (max 30000)."),
-  waitForSelector: z.string().min(1).optional().describe("CSS selector to wait for after clicking (e.g., modal content)."),
-  waitForNavigation: z.boolean().optional().describe("Whether to wait for page navigation after clicking."),
-  button: z.enum(["left", "right", "middle"]).optional().describe("Mouse button to use for the click."),
-  clickCount: z.number().min(1).max(3).optional().describe("Number of clicks (1 for single, 2 for double, 3 for triple)."),
-}).describe("A click action to perform before capturing the screenshot.");
+  selector: z.string().min(1),
+  delayBefore: z.number().min(0).max(30000).optional(),
+  delayAfter: z.number().min(0).max(30000).optional(),
+  waitForSelector: z.string().min(1).optional(),
+  waitForNavigation: z.boolean().optional(),
+  button: z.enum(["left", "right", "middle"]).optional(),
+  clickCount: z.number().min(1).max(3).optional(),
+});
 
-const clickActionsSchema = z.array(clickActionSchema).optional().describe("Array of click actions to execute in order before capturing.");
+const clickActionsSchema = z.array(clickActionSchema).optional();
 
-const delayStepSchema = z.object({
-  type: z.literal("delay").describe("Step type identifier."),
-  duration: z.number().min(0).max(30000, "Delay duration cannot exceed 30 seconds.").describe("Duration to wait in milliseconds (max 30000)."),
-}).describe("A delay step that pauses execution for a specified duration.");
+// Runtime step schemas for backward compatibility
+// These are NOT exposed to LLMs - they only see the 6 types from schemas/index.ts
 
-const clickStepSchema = z.object({
-  type: z.literal("click").describe("Step type identifier."),
-  selector: z.string().min(1, "Click selector cannot be empty.").describe("CSS selector of the element to click."),
-  button: z.enum(["left", "right", "middle"]).optional().describe("Mouse button to use for the click."),
-  clickCount: z.number().min(1).max(3).optional().describe("Number of clicks (1 for single, 2 for double, 3 for triple)."),
-  waitForSelector: z.string().min(1).optional().describe("CSS selector to wait for after clicking."),
-  waitForNavigation: z.boolean().optional().describe("Whether to wait for page navigation after clicking."),
-}).describe("A click step that clicks an element on the page.");
+const fillStepBaseSchema = z.object({
+  type: z.literal("fill"),
+  target: z.string().optional(),
+  value: z.string().optional(),
+  fields: z.array(z.object({
+    target: z.string().min(1),
+    value: z.string(),
+  })).optional(),
+  submit: z.boolean().optional(),
+  clear: z.boolean().optional(),
+});
 
-const scrollStepSchema = z.object({
-  type: z.literal("scroll").describe("Step type identifier."),
-  x: z.number().min(0).optional().describe("Horizontal scroll position in pixels."),
-  y: z.number().min(0).optional().describe("Vertical scroll position in pixels."),
-  selector: z.string().min(1).optional().describe("CSS selector of an element to scroll into view."),
-  behavior: z.enum(["auto", "smooth"]).optional().describe("Scroll behavior: 'auto' for instant, 'smooth' for animated."),
-}).describe("A scroll step that scrolls the page to a position or element.");
+const clickStepSchemaRuntime = z.object({
+  type: z.literal("click"),
+  target: z.string().min(1),
+  waitFor: z.string().optional(), // New canonical name
+  wait: z.string().optional(), // Legacy alias for waitFor
+  waitAfter: z.string().optional(), // Legacy alias for waitFor
+  button: z.enum(["left", "right", "middle"]).optional(),
+  clickCount: z.number().min(1).max(3).optional(),
+  waitForSelector: z.string().optional(), // Legacy alias for waitFor
+  waitForNavigation: z.boolean().optional(),
+});
 
-const waitForSelectorStepSchema = z.object({
-  type: z.literal("waitForSelector").describe("Step type identifier."),
-  selector: z.string().min(1, "Selector cannot be empty.").describe("CSS selector to wait for."),
-  timeout: z.number().min(0).max(60000).optional().describe("Maximum time to wait in milliseconds (max 60000). Defaults to 10000."),
-}).describe("A step that waits for an element matching the selector to appear.");
+const scrollStepSchemaRuntime = z.object({
+  type: z.literal("scroll"),
+  to: z.string().optional(),
+  y: z.number().optional(),
+  x: z.number().optional(),
+  scrollTo: z.string().optional(),
+  behavior: z.enum(["auto", "smooth"]).optional(),
+});
 
-const screenshotStepSchema = z.object({
-  type: z.literal("screenshot").describe("Step type identifier."),
-  fullPage: z.boolean().optional().describe("Whether to capture the entire scrollable page. If false or omitted, captures only the visible viewport. Overrides the top-level fullPage setting for this specific screenshot."),
-  selector: z.string().min(1).optional().describe("CSS selector of a specific element to capture. If provided, only this element is captured instead of the full page or viewport."),
-}).describe("A step that captures a screenshot at the current page state. Supports full-page capture or targeting a specific element by selector.");
+const waitStepBaseSchema = z.object({
+  type: z.literal("wait"),
+  for: z.string().optional(),
+  duration: z.number().min(0).max(30000).optional(),
+});
+
+const screenshotStepSchemaRuntime = z.object({
+  type: z.literal("screenshot"),
+  fullPage: z.boolean().optional(),
+  element: z.string().optional(),
+  captureElement: z.string().optional(),
+});
 
 const cookieActionStepSchema = z.object({
-  type: z.literal("cookie").describe("Step type identifier."),
-  action: z.enum(["set", "delete", "get", "list"]).describe("The operation to perform: 'set' to add or update a cookie, 'delete' to remove a cookie, 'get' to read a cookie's value, 'list' to get all cookies."),
-  name: z.string().min(1).optional().describe("The name of the cookie. Required for 'set', 'delete', and 'get' operations. Not needed for 'list'."),
-  value: z.string().optional().describe("The value of the cookie. Required when action is 'set'."),
-  domain: z.string().optional().describe("The domain the cookie applies to."),
-  path: z.string().optional().describe("The path the cookie applies to."),
-  secure: z.boolean().optional().describe("Whether the cookie is secure (HTTPS only)."),
-  httpOnly: z.boolean().optional().describe("Whether the cookie is HTTP-only (not accessible via JavaScript)."),
-  sameSite: z.enum(["Strict", "Lax", "None"]).optional().describe("The SameSite attribute of the cookie."),
-  expires: z.number().optional().describe("Unix timestamp (in seconds) when the cookie expires."),
-}).describe("A step that manages cookies in the browser. Use 'set' to add/update, 'delete' to remove, 'get' to read a specific cookie, 'list' to get all cookies.");
+  type: z.literal("cookie"),
+  action: z.enum(["set", "delete"]),
+  name: z.string().min(1),
+  value: z.string().optional(),
+  domain: z.string().optional(),
+  path: z.string().optional(),
+  secure: z.boolean().optional(),
+  httpOnly: z.boolean().optional(),
+  sameSite: z.enum(["Strict", "Lax", "None"]).optional(),
+  expires: z.number().optional(),
+});
 
 const storageActionStepSchema = z.object({
-  type: z.literal("storage").describe("Step type identifier."),
-  storageType: z.enum(["localStorage", "sessionStorage"]).describe("The type of web storage to manipulate."),
-  action: z.enum(["set", "delete", "clear", "get", "list"]).describe("The operation to perform: 'set' to add/update an item, 'delete' to remove a specific key, 'clear' to remove all items, 'get' to read a value, 'list' to get all keys."),
-  key: z.string().optional().describe("The storage key. Required for 'set', 'delete', and 'get' operations."),
-  value: z.string().optional().describe("The value to store. Required when action is 'set'."),
-}).describe("A step that manages localStorage or sessionStorage. Use 'set' to add/update, 'delete' to remove, 'clear' to remove all, 'get' to read a value, 'list' to get all keys.");
+  type: z.literal("storage"),
+  storageType: z.enum(["localStorage", "sessionStorage"]),
+  action: z.enum(["set", "delete", "clear"]),
+  key: z.string().optional(),
+  value: z.string().optional(),
+});
 
-const viewportStepSchema = z.object({
-  type: z.literal("viewport").describe("Step type identifier."),
-  preset: z.string().optional().describe("Device preset name (e.g., 'iphone-14', 'desktop-hd', 'ipad-pro')."),
-  width: z.number().positive().optional().describe("Viewport width in pixels. Overrides preset width if specified."),
-  height: z.number().positive().optional().describe("Viewport height in pixels. Overrides preset height if specified."),
-  deviceScaleFactor: z.number().positive().optional().describe("Device scale factor (DPR). Defaults to 1."),
-  isMobile: z.boolean().optional().describe("Whether to emulate a mobile device."),
-  hasTouch: z.boolean().optional().describe("Whether the device supports touch events."),
-  isLandscape: z.boolean().optional().describe("Whether the viewport is in landscape orientation."),
-  userAgent: z.string().optional().describe("Custom User-Agent string to use."),
-}).describe("A step that configures the viewport for subsequent actions and screenshots.");
+const viewportStepSchemaRuntime = z.object({
+  type: z.literal("viewport"),
+  device: z.string().optional(),
+  preset: z.string().optional(),
+  width: z.number().positive().optional(),
+  height: z.number().positive().optional(),
+});
 
-const fullPageStepSchema = z.object({
-  type: z.literal("fullPage").describe("Step type identifier."),
-  enabled: z.boolean().describe("Enable or disable full page capture for subsequent screenshots."),
-}).describe("A step that enables or disables full page capture for subsequent screenshot steps.");
+const typeStepSchemaRuntime = z.object({
+  type: z.literal("type"),
+  target: z.string().min(1),
+  text: z.string(),
+  pressEnter: z.boolean().optional(),
+  delay: z.number().min(0).max(500).optional(),
+});
+
+const hoverStepSchemaRuntime = z.object({
+  type: z.literal("hover"),
+  target: z.string().optional(),
+  selector: z.string().optional(),
+  duration: z.number().min(0).max(10000).optional(),
+});
 
 const textInputStepSchema = z.object({
-  type: z.literal("text").describe("Step type identifier."),
-  selector: z.string().min(1).describe("CSS selector for the input element."),
-  value: z.string().describe("Text to type."),
-  clearFirst: z.boolean().optional().describe("Clear existing text first (default: true)."),
-  delay: z.number().min(0).max(1000).optional().describe("Delay between keystrokes in ms (0-1000)."),
-  pressEnter: z.boolean().optional().describe("Press Enter after typing (default: false)."),
-}).describe("A step that types text into an input element.");
+  type: z.literal("text"),
+  selector: z.string().min(1),
+  value: z.string(),
+  clearFirst: z.boolean().optional(),
+  delay: z.number().min(0).max(1000).optional(),
+  pressEnter: z.boolean().optional(),
+});
 
 const selectStepSchema = z.object({
-  type: z.literal("select").describe("Step type identifier."),
-  selector: z.string().min(1).describe("CSS selector for the select element."),
-  value: z.string().optional().describe("Select by value."),
-  text: z.string().optional().describe("Select by visible text."),
-  index: z.number().optional().describe("Select by index."),
-}).describe("A step that selects an option in a dropdown.");
+  type: z.literal("select"),
+  selector: z.string().min(1),
+  value: z.string().optional(),
+  text: z.string().optional(),
+  index: z.number().optional(),
+});
 
 const radioStepSchema = z.object({
-  type: z.literal("radio").describe("Step type identifier."),
-  selector: z.string().min(1).describe("CSS selector for the radio button."),
-  value: z.string().optional().describe("Value attribute of the radio button."),
-  name: z.string().optional().describe("Name attribute to identify the radio group."),
-}).describe("A step that selects a radio button.");
+  type: z.literal("radio"),
+  selector: z.string().min(1),
+  value: z.string().optional(),
+  name: z.string().optional(),
+});
 
 const checkboxStepSchema = z.object({
-  type: z.literal("checkbox").describe("Step type identifier."),
-  selector: z.string().min(1).describe("CSS selector for the checkbox."),
-  checked: z.boolean().describe("Whether to check (true) or uncheck (false)."),
-}).describe("A step that checks or unchecks a checkbox.");
-
-const hoverStepSchema = z.object({
-  type: z.literal("hover").describe("Step type identifier."),
-  selector: z.string().min(1).describe("CSS selector for the element to hover over."),
-  duration: z.number().min(0).max(10000).optional().describe("How long to maintain hover in ms (0-10000)."),
-}).describe("A step that hovers over an element.");
+  type: z.literal("checkbox"),
+  selector: z.string().min(1),
+  checked: z.boolean(),
+});
 
 const fileUploadStepSchema = z.object({
-  type: z.literal("upload").describe("Step type identifier."),
-  selector: z.string().min(1).describe("CSS selector for the file input element."),
-  filePaths: z.array(z.string()).describe("File paths to upload."),
-}).describe("A step that uploads files to a file input.");
+  type: z.literal("upload"),
+  selector: z.string().min(1),
+  filePaths: z.array(z.string()),
+});
 
 const formSubmitStepSchema = z.object({
-  type: z.literal("submit").describe("Step type identifier."),
-  selector: z.string().min(1).describe("CSS selector for the form or submit button."),
-  waitForNavigation: z.boolean().optional().describe("Wait for page navigation after submit (default: true)."),
-}).describe("A step that submits a form.");
+  type: z.literal("submit"),
+  selector: z.string().min(1),
+  waitForNavigation: z.boolean().optional(),
+});
 
 const keyPressStepSchema = z.object({
-  type: z.literal("keypress").describe("Step type identifier."),
-  key: z.string().describe("Key to press (e.g., 'Enter', 'Tab', 'Escape', 'ArrowDown')."),
-  modifiers: z.array(z.string()).optional().describe("Optional modifiers ('Control', 'Shift', 'Alt', 'Meta')."),
-  selector: z.string().optional().describe("Optional element to focus first."),
-}).describe("A step that presses a keyboard key.");
+  type: z.literal("keypress"),
+  key: z.string(),
+  modifiers: z.array(z.string()).optional(),
+  selector: z.string().optional(),
+});
 
 const focusStepSchema = z.object({
-  type: z.literal("focus").describe("Step type identifier."),
-  selector: z.string().min(1).describe("CSS selector for the element to focus."),
-}).describe("A step that focuses an element.");
+  type: z.literal("focus"),
+  selector: z.string().min(1),
+});
 
 const blurStepSchema = z.object({
-  type: z.literal("blur").describe("Step type identifier."),
-  selector: z.string().min(1).describe("CSS selector for the element to blur."),
-}).describe("A step that removes focus from an element.");
+  type: z.literal("blur"),
+  selector: z.string().min(1),
+});
 
 const clearStepSchema = z.object({
-  type: z.literal("clear").describe("Step type identifier."),
-  selector: z.string().min(1).describe("CSS selector for the input element to clear."),
-}).describe("A step that clears the text in an input element.");
+  type: z.literal("clear"),
+  selector: z.string().min(1),
+});
 
-const evaluateStepSchema = z.object({
-  type: z.literal("evaluate").describe("Step type identifier."),
-  script: z.string().describe("JavaScript code to execute."),
-  selector: z.string().optional().describe("Optional selector to pass element to the script."),
-}).describe("A step that executes JavaScript in the page context.");
+const evaluateStepSchemaRuntime = z.object({
+  type: z.literal("evaluate"),
+  script: z.string(),
+  selector: z.string().optional(),
+});
 
+const formFieldInputSchema = z.object({
+  selector: z.string().min(1),
+  value: z.string(),
+  type: z.enum(["text", "select", "checkbox", "radio", "textarea", "password", "email", "number", "tel", "url", "date", "file"]).optional(),
+  matchByText: z.boolean().optional(),
+  delay: z.number().min(0).max(1000).optional(),
+});
+
+const fillFormStepSchema = z.object({
+  type: z.literal("fillForm"),
+  fields: z.array(formFieldInputSchema).min(1),
+  formSelector: z.string().optional(),
+  submit: z.boolean().optional(),
+  submitSelector: z.string().optional(),
+  waitForNavigation: z.boolean().optional(),
+});
+
+const quickFillStepSchema = z.object({
+  type: z.literal("quickFill"),
+  target: z.string().min(1),
+  value: z.string(),
+  submit: z.boolean().optional(),
+});
+
+const fullPageStepSchema = z.object({
+  type: z.literal("fullPage"),
+  enabled: z.boolean(),
+});
+
+const delayStepSchema = z.object({
+  type: z.literal("delay"),
+  duration: z.number().min(0).max(30000),
+});
+
+const waitForSelectorStepSchema = z.object({
+  type: z.literal("waitForSelector"),
+  awaitElement: z.string().min(1),
+  timeout: z.number().min(0).max(60000).optional(),
+});
+
+// Runtime schema accepts all step types for backward compatibility
 const actionStepSchema = z.discriminatedUnion("type", [
-  delayStepSchema,
-  clickStepSchema,
-  scrollStepSchema,
+  fillFormStepSchema,
+  quickFillStepSchema,
+  fillStepBaseSchema,
+  clickStepSchemaRuntime,
+  scrollStepSchemaRuntime,
   waitForSelectorStepSchema,
-  screenshotStepSchema,
-  cookieActionStepSchema,
-  storageActionStepSchema,
-  viewportStepSchema,
-  fullPageStepSchema,
+  waitStepBaseSchema,
+  screenshotStepSchemaRuntime,
+  viewportStepSchemaRuntime,
+  typeStepSchemaRuntime,
+  hoverStepSchemaRuntime,
+  delayStepSchema,
   textInputStepSchema,
   selectStepSchema,
   radioStepSchema,
   checkboxStepSchema,
-  hoverStepSchema,
   fileUploadStepSchema,
   formSubmitStepSchema,
   keyPressStepSchema,
   focusStepSchema,
   blurStepSchema,
   clearStepSchema,
-  evaluateStepSchema,
+  evaluateStepSchemaRuntime,
+  cookieActionStepSchema,
+  storageActionStepSchema,
+  fullPageStepSchema,
 ]);
 
-const stepsSchema = z.array(actionStepSchema).optional().describe("Ordered sequence of action steps to execute. Supports: delay, click, scroll, waitForSelector, screenshot, cookie, storage, viewport, fullPage, text, select, radio, checkbox, hover, upload, submit, keypress, focus, blur, clear, and evaluate.");
+const runtimeStepsSchema = z.array(actionStepSchema).optional();
 
+// Internal schema for legacy parameter support (NOT exposed in tool schema)
+const legacyParametersSchema = z.object({
+  cookies: z.array(cookieSchema).optional(),
+  viewport: viewportSchema,
+  scroll: scrollSchema,
+  clickActions: clickActionsSchema,
+}).partial();
+
+// LLM-exposed schema - clean and simple with 6 canonical step types
+const captureScreenshotInputSchema = z.object({
+  url: z
+    .string({ required_error: "URL is required." })
+    .min(1, "URL cannot be empty.")
+    .describe("The webpage URL to capture.")
+    .transform((value: string, ctx: z.RefinementCtx) => {
+      try {
+        return normalizeUrl(value);
+      } catch (error) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: (error as Error).message,
+        });
+        return z.NEVER;
+      }
+    }),
+  steps: z.array(llmStepSchema).optional()
+    .describe("Steps to execute before capture. Order: viewport → wait → fill → click → scroll → screenshot"),
+  headers: z.record(z.string(), z.string()).optional()
+    .describe("HTTP headers for authentication (e.g., { 'Authorization': 'Bearer token' })."),
+});
+
+// Full runtime schema - includes legacy params and accepts all step types for backward compatibility
 const captureScreenshotSchema = z.object({
   url: z
     .string({ required_error: "URL is required." })
     .min(1, "URL cannot be empty.")
-    .describe("The URL of the webpage to capture.")
     .transform((value: string, ctx: z.RefinementCtx) => {
       try {
         return normalizeUrl(value);
@@ -281,26 +364,48 @@ const captureScreenshotSchema = z.object({
     }),
   headers: headersSchema,
   retryPolicy: retryPolicySchema,
-  storageTarget: z.string().optional().describe("Storage target identifier for persisting the screenshot."),
-  steps: stepsSchema,
-  // Legacy parameters - kept for backward compatibility
-  cookies: z.array(cookieSchema).optional().describe("[Deprecated: Use steps with type 'cookie'] Cookies to set before loading the page."),
-  viewport: viewportSchema.describe("[Deprecated: Use steps with type 'viewport'] Viewport configuration."),
-  scroll: scrollSchema.describe("[Deprecated: Use steps with type 'scroll'] Scroll position before capture."),
-  clickActions: clickActionsSchema.describe("[Deprecated: Use steps with type 'click'] Click actions before capture."),
-});
+  storageTarget: z.string().optional(),
+  steps: runtimeStepsSchema,
+}).and(legacyParametersSchema);
 
 export function registerCaptureScreenshotTool(server: McpServer, logger: Logger) {
   server.registerTool(
     "captureScreenshot",
     {
-      title: "Capture a screenshot",
-      description: "Capture a PNG screenshot for the provided URL (full page optional). Supports click actions to interact with the page before capture (e.g., open modals, navigate carousels, expand dropdowns).",
-      inputSchema: captureScreenshotSchema,
+      title: "Capture Screenshot",
+      description: CAPTURE_SCREENSHOT_DESCRIPTION,
+      inputSchema: captureScreenshotInputSchema,
     },
-    async (input) => {
+    async (rawInput) => {
+      // Parse with full schema to support legacy params at runtime
+      const input = captureScreenshotSchema.parse(rawInput);
       const { url, viewport, retryPolicy, storageTarget, scroll } = input;
       const telemetry = getGlobalTelemetry(logger);
+      
+      // Handle validate mode - return analysis without executing
+      const validateMode = (rawInput as any).validate === true;
+      if (validateMode) {
+        logger.info("captureScreenshot:validate", { url, stepsCount: input.steps?.length || 0 });
+        
+        const validationResult = performStepValidation(input.steps || [], url);
+        const formattedResult = formatValidateResult(validationResult);
+        
+        await telemetry.emitTelemetry("tool.validated", {
+          tool: "captureScreenshot",
+          url,
+          valid: validationResult.valid,
+          stepCount: validationResult.stepCount,
+        });
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: `URL: ${url}\n\n${formattedResult}`,
+            },
+          ],
+        };
+      }
       
       logger.info("captureScreenshot:requested", { 
         url, 
@@ -334,12 +439,20 @@ export function registerCaptureScreenshotTool(server: McpServer, logger: Logger)
         });
 
         const metadataSummary = formatMetadata(result.metadata);
+        
+        // Collect deprecation warnings for legacy parameters
+        const deprecations = collectDeprecationWarnings(input.steps || []);
+        let responseText = metadataSummary;
+        if (deprecations.hasWarnings) {
+          responseText += "\n\nDEPRECATION WARNINGS:\n" + deprecations.warnings.map(w => `⚠ ${w}`).join("\n");
+          logger.warn("deprecation:warnings", { warnings: deprecations.warnings });
+        }
 
         return {
           content: [
             {
               type: "text",
-              text: metadataSummary,
+              text: responseText,
             },
             {
               type: "image",
@@ -427,7 +540,7 @@ function convertLegacyParametersToSteps(args: CaptureScreenshotInput, logger?: L
       // Add the click step
       steps.push({
         type: "click",
-        selector: action.selector,
+        target: action.selector,
         button: action.button,
         clickCount: action.clickCount,
         waitForSelector: action.waitForSelector,
@@ -451,7 +564,7 @@ function convertLegacyParametersToSteps(args: CaptureScreenshotInput, logger?: L
       type: "scroll",
       x: args.scroll.x,
       y: args.scroll.y,
-      selector: args.scroll.selector,
+      scrollTo: args.scroll.selector,
       behavior: args.scroll.behavior,
     });
   }
@@ -567,7 +680,18 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
         scrollHeight: document.documentElement.scrollHeight,
         scrollX: window.scrollX,
         scrollY: window.scrollY,
-      }));
+      })).catch((error) => {
+        logger?.warn("metrics:capture_failed", { error: error.message });
+        // Return default metrics if evaluation fails
+        return {
+          viewportWidth: 1280,
+          viewportHeight: 720,
+          scrollWidth: 1280,
+          scrollHeight: 720,
+          scrollX: 0,
+          scrollY: 0,
+        };
+      });
 
       // Get current viewport for metadata (may not be available in tests)
       const currentViewport = page.viewport ? page.viewport() : { width: 1280, height: 720 };
@@ -887,113 +1011,186 @@ async function executeSteps(
         }
 
         case "click": {
+          const clickStep = step as any;
           logger?.debug("step:click", { 
             index: i, 
-            selector: step.selector,
-            button: step.button || "left",
-            clickCount: step.clickCount || 1,
+            target: clickStep.target,
+            button: clickStep.button || "left",
+            clickCount: clickStep.clickCount || 1,
           });
 
           // Wait for the element to be present
-          await page.waitForSelector(step.selector, { timeout: 10000 });
+          await page.waitForSelector(clickStep.target, { timeout: 10000 });
 
-          // Click the element
+          // Build click options for all click types
           const clickOptions: { button?: "left" | "right" | "middle"; clickCount?: number } = {};
-          if (step.button) {
-            clickOptions.button = step.button;
+          if (clickStep.button) {
+            clickOptions.button = clickStep.button;
           }
-          if (step.clickCount) {
-            clickOptions.clickCount = step.clickCount;
+          if (clickStep.clickCount && clickStep.clickCount > 1) {
+            clickOptions.clickCount = clickStep.clickCount;
           }
 
-          if (step.waitForNavigation) {
+          // Normalize waitFor parameter (supports: waitFor, wait, waitAfter, waitForSelector)
+          const waitForSelector = clickStep.waitFor || clickStep.wait || clickStep.waitAfter || clickStep.waitForSelector;
+
+          // Handle legacy ClickStep with waitForNavigation
+          if (clickStep.waitForNavigation) {
             // Click and wait for navigation simultaneously
             await Promise.all([
               page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }),
-              page.click(step.selector, clickOptions),
+              page.click(clickStep.target, clickOptions),
             ]);
           } else {
-            await page.click(step.selector, clickOptions);
+            // Standard click
+            await page.click(clickStep.target, clickOptions);
           }
-
-          logger?.debug("step:clicked", { index: i, selector: step.selector });
 
           // Wait for a specific selector to appear after click
-          if (step.waitForSelector) {
-            logger?.debug("step:waitingForSelector", { 
+          if (waitForSelector) {
+            logger?.debug("step:click:waitingFor", { 
               index: i, 
-              waitForSelector: step.waitForSelector,
+              waitFor: waitForSelector,
             });
-            await page.waitForSelector(step.waitForSelector, { timeout: 10000 });
+            try {
+              await page.waitForSelector(waitForSelector, { timeout: 10000 });
+            } catch (e) {
+              logger?.warn("step:click:waitFor_timeout", { waitFor: waitForSelector });
+            }
           }
 
+          logger?.debug("step:clicked", { index: i, target: clickStep.target });
           stepsExecuted++;
           break;
         }
 
         case "scroll": {
-          const behavior = step.behavior || "auto";
-
-          if (step.selector) {
-            logger?.debug("step:scroll:to_selector", { index: i, selector: step.selector, behavior });
+          const scrollStep = step as any;
+          
+          // Handle new SimpleScrollStep
+          if ('to' in scrollStep && scrollStep.to) {
+            logger?.debug("step:scroll:to_element", { index: i, to: scrollStep.to });
 
             const scrollResult = await page.evaluate(
-              (params: { selector: string; behavior: ScrollBehavior }) => {
-                const element = document.querySelector(params.selector);
+              (selector: string) => {
+                const element = document.querySelector(selector);
                 if (!element) {
-                  return { ok: false, error: `Element not found: ${params.selector}` };
+                  return { ok: false, error: `Element not found: ${selector}` };
                 }
-                element.scrollIntoView({ behavior: params.behavior, block: "start" });
+                element.scrollIntoView({ behavior: "auto", block: "start" });
                 return { ok: true, x: window.scrollX, y: window.scrollY };
               },
-              { selector: step.selector, behavior }
+              scrollStep.to as string
             );
 
             if (!scrollResult.ok) {
-              logger?.warn("step:scroll:selector_not_found", { index: i, selector: step.selector });
+              logger?.warn("step:scroll:element_not_found", { index: i, to: scrollStep.to });
             }
-          } else {
-            const x = step.x ?? 0;
-            const y = step.y ?? 0;
-            logger?.debug("step:scroll:to_position", { index: i, x, y, behavior });
-
-            await page.evaluate(
-              (params: { x: number; y: number; behavior: ScrollBehavior }) => {
-                window.scrollTo({ left: params.x, top: params.y, behavior: params.behavior });
-              },
-              { x, y, behavior }
-            );
           }
+          // Handle y position with optional behavior
+          else if ('y' in scrollStep && scrollStep.y !== undefined) {
+            const behavior = scrollStep.behavior || "auto";
+            logger?.debug("step:scroll:to_position", { index: i, y: scrollStep.y, behavior });
+            
+            await page.evaluate(
+              (params: { y: number; behavior: ScrollBehavior }) => {
+                window.scrollTo({ left: 0, top: params.y, behavior: params.behavior });
+              },
+              { y: scrollStep.y, behavior }
+            );
+            
+            // Wait for smooth scroll to complete
+            if (behavior === "smooth") {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+          // Handle legacy ScrollStep
+          else {
+            const behavior = scrollStep.behavior || "auto";
+            
+            if (scrollStep.scrollTo) {
+              logger?.debug("step:scroll:to_element", { index: i, scrollTo: scrollStep.scrollTo, behavior });
 
-          // Wait for smooth scroll to complete
-          if (behavior === "smooth") {
-            await new Promise(resolve => setTimeout(resolve, 500));
+              const scrollResult = await page.evaluate(
+                (params: { scrollTo: string; behavior: ScrollBehavior }) => {
+                  const element = document.querySelector(params.scrollTo);
+                  if (!element) {
+                    return { ok: false, error: `Element not found: ${params.scrollTo}` };
+                  }
+                  element.scrollIntoView({ behavior: params.behavior, block: "start" });
+                  return { ok: true, x: window.scrollX, y: window.scrollY };
+                },
+                { scrollTo: scrollStep.scrollTo, behavior }
+              );
+
+              if (!scrollResult.ok) {
+                logger?.warn("step:scroll:element_not_found", { index: i, scrollTo: scrollStep.scrollTo });
+              }
+            } else {
+              const x = scrollStep.x ?? 0;
+              const y = scrollStep.y ?? 0;
+              logger?.debug("step:scroll:to_position", { index: i, x, y, behavior });
+
+              await page.evaluate(
+                (params: { x: number; y: number; behavior: ScrollBehavior }) => {
+                  window.scrollTo({ left: params.x, top: params.y, behavior: params.behavior });
+                },
+                { x, y, behavior }
+              );
+            }
+
+            // Wait for smooth scroll to complete
+            if (behavior === "smooth") {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
           }
 
           stepsExecuted++;
           break;
         }
 
+        case "wait":
         case "waitForSelector": {
-          const timeout = step.timeout ?? 10000;
-          logger?.debug("step:waitForSelector", { index: i, selector: step.selector, timeout });
-          await page.waitForSelector(step.selector, { timeout });
+          const waitStep = step as any;
+          
+          // Handle new WaitStep
+          if ('for' in waitStep && waitStep.for) {
+            logger?.debug("step:wait:for_element", { index: i, for: waitStep.for });
+            await page.waitForSelector(waitStep.for, { timeout: 10000 });
+          }
+          // Handle duration
+          else if ('duration' in waitStep && waitStep.duration !== undefined) {
+            logger?.debug("step:wait:duration", { index: i, duration: waitStep.duration });
+            await new Promise(resolve => setTimeout(resolve, waitStep.duration));
+          }
+          // Handle legacy WaitForSelectorStep
+          else if ('awaitElement' in waitStep) {
+            const timeout = waitStep.timeout ?? 10000;
+            logger?.debug("step:waitForSelector", { index: i, awaitElement: waitStep.awaitElement, timeout });
+            await page.waitForSelector(waitStep.awaitElement, { timeout });
+          }
+          
           stepsExecuted++;
           break;
         }
 
         case "screenshot": {
+          const screenshotStep = step as any;
           // Use step-level fullPage if specified, otherwise use current setting
-          const useFullPage = step.fullPage !== undefined ? step.fullPage : fullPageEnabled;
-          logger?.debug("step:screenshot", { index: i, fullPage: useFullPage, selector: step.selector });
+          const useFullPage = screenshotStep.fullPage !== undefined ? screenshotStep.fullPage : fullPageEnabled;
           
-          if (step.selector) {
+          // Get element selector (handle both 'element' and 'captureElement')
+          const elementSelector = screenshotStep.element || screenshotStep.captureElement;
+          
+          logger?.debug("step:screenshot", { index: i, fullPage: useFullPage, element: elementSelector });
+          
+          if (elementSelector) {
             // Capture specific element
-            const element = await page.$(step.selector);
+            const element = await page.$(elementSelector);
             if (element) {
               screenshotBuffer = (await element.screenshot({ type: "png" })) as Buffer;
             } else {
-              logger?.warn("step:screenshot:selector_not_found", { index: i, selector: step.selector });
+              logger?.warn("step:screenshot:element_not_found", { index: i, element: elementSelector });
               // Fall back to page screenshot
               screenshotBuffer = (await page.screenshot({
                 type: "png",
@@ -1007,6 +1204,29 @@ async function executeSteps(
             })) as Buffer;
           }
           screenshotsTaken++;
+          stepsExecuted++;
+          break;
+        }
+
+        case "quickFill": {
+          const quickFillStep = step as QuickFillStep;
+          logger?.debug("step:quickFill", { index: i, target: quickFillStep.target });
+          
+          await page.waitForSelector(quickFillStep.target, { timeout: 5000 });
+          
+          // Clear existing text and type the new value
+          await page.click(quickFillStep.target, { clickCount: 3 });
+          await page.keyboard.press('Backspace');
+          await page.type(quickFillStep.target, quickFillStep.value);
+          
+          // Press Enter if submit is requested
+          if (quickFillStep.submit) {
+            await page.keyboard.press('Enter');
+            // Wait a bit for any navigation or form submission
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          
+          logger?.debug("step:quickFill:completed", { index: i });
           stepsExecuted++;
           break;
         }
@@ -1046,18 +1266,6 @@ async function executeSteps(
             } else {
               logger?.warn("step:cookie:not_found", { index: i, name: step.name });
             }
-          } else if (step.action === "get" && step.name) {
-            const cookies = await page.cookies();
-            const cookie = cookies.find(c => c.name === step.name);
-            if (cookie) {
-              logger?.info("step:cookie:get", { index: i, name: step.name, value: cookie.value });
-            } else {
-              logger?.warn("step:cookie:get:not_found", { index: i, name: step.name });
-            }
-          } else if (step.action === "list") {
-            const cookies = await page.cookies();
-            const cookieNames = cookies.map(c => c.name);
-            logger?.info("step:cookie:list", { index: i, count: cookies.length, cookies: cookieNames });
           }
           stepsExecuted++;
           break;
@@ -1067,58 +1275,28 @@ async function executeSteps(
           const storageStep = step as any;
           logger?.debug("step:storage", { index: i, storageType: storageStep.storageType, action: storageStep.action, key: storageStep.key });
           
-          if (storageStep.action === "get") {
-            const result = await page.evaluate(
-              (params: { storageType: string; key?: string }) => {
-                const storage = params.storageType === "localStorage" ? localStorage : sessionStorage;
-                if (params.key !== undefined) {
-                  return storage.getItem(params.key);
-                }
-                return null;
-              },
-              { storageType: storageStep.storageType, key: storageStep.key }
-            );
-            logger?.info("step:storage:get", { index: i, storageType: storageStep.storageType, key: storageStep.key, value: result });
-          } else if (storageStep.action === "list") {
-            const keys = await page.evaluate(
-              (params: { storageType: string }) => {
-                const storage = params.storageType === "localStorage" ? localStorage : sessionStorage;
-                const keys: string[] = [];
-                for (let i = 0; i < storage.length; i++) {
-                  const key = storage.key(i);
-                  if (key !== null) {
-                    keys.push(key);
+          await page.evaluate(
+            (params: { storageType: string; action: string; key?: string; value?: string }) => {
+              const storage = params.storageType === "localStorage" ? localStorage : sessionStorage;
+              
+              switch (params.action) {
+                case "set":
+                  if (params.key !== undefined) {
+                    storage.setItem(params.key, params.value || "");
                   }
-                }
-                return keys;
-              },
-              { storageType: storageStep.storageType }
-            );
-            logger?.info("step:storage:list", { index: i, storageType: storageStep.storageType, count: keys.length, keys });
-          } else {
-            await page.evaluate(
-              (params: { storageType: string; action: string; key?: string; value?: string }) => {
-                const storage = params.storageType === "localStorage" ? localStorage : sessionStorage;
-                
-                switch (params.action) {
-                  case "set":
-                    if (params.key !== undefined) {
-                      storage.setItem(params.key, params.value || "");
-                    }
-                    break;
-                  case "delete":
-                    if (params.key !== undefined) {
-                      storage.removeItem(params.key);
-                    }
-                    break;
-                  case "clear":
-                    storage.clear();
-                    break;
-                }
-              },
-              { storageType: storageStep.storageType, action: storageStep.action, key: storageStep.key, value: storageStep.value }
-            );
-          }
+                  break;
+                case "delete":
+                  if (params.key !== undefined) {
+                    storage.removeItem(params.key);
+                  }
+                  break;
+                case "clear":
+                  storage.clear();
+                  break;
+              }
+            },
+            { storageType: storageStep.storageType, action: storageStep.action, key: storageStep.key, value: storageStep.value }
+          );
           
           logger?.debug("step:storage:completed", { index: i, storageType: storageStep.storageType, action: storageStep.action });
           stepsExecuted++;
@@ -1225,15 +1403,87 @@ async function executeSteps(
 
         case "hover": {
           const hoverStep = step as any;
-          logger?.debug("step:hover", { index: i, selector: hoverStep.selector });
-          await page.waitForSelector(hoverStep.selector, { timeout: 5000 });
-          await page.hover(hoverStep.selector);
+          // Get the selector (target for new, selector for legacy)
+          const selector = hoverStep.target || hoverStep.selector;
+          const duration = hoverStep.duration ?? 100;
           
-          if (hoverStep.duration && hoverStep.duration > 0) {
-            await new Promise(resolve => setTimeout(resolve, hoverStep.duration));
+          logger?.debug("step:hover", { index: i, selector, duration });
+          await page.hover(selector);
+          if (duration > 0) {
+            await new Promise(resolve => setTimeout(resolve, duration));
+          }
+          logger?.debug("step:hover:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "focus": {
+          const focusStep = step as any;
+          logger?.debug("step:focus", { index: i, selector: focusStep.selector });
+          
+          await page.focus(focusStep.selector);
+          
+          logger?.debug("step:focus:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "blur": {
+          const blurStep = step as any;
+          logger?.debug("step:blur", { index: i, selector: blurStep.selector });
+          
+          await page.evaluate((selector: string) => {
+            const element = document.querySelector(selector) as HTMLElement;
+            if (element) element.blur();
+          }, blurStep.selector);
+          
+          logger?.debug("step:blur:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "clear": {
+          const clearStep = step as any;
+          logger?.debug("step:clear", { index: i, selector: clearStep.selector });
+          
+          await page.click(clearStep.selector, { clickCount: 3 });
+          await page.keyboard.press('Backspace');
+          
+          logger?.debug("step:clear:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "keypress": {
+          const keyPressStep = step as any;
+          logger?.debug("step:keypress", { index: i, key: keyPressStep.key });
+          
+          if (keyPressStep.modifiers && keyPressStep.modifiers.length > 0) {
+            for (const modifier of keyPressStep.modifiers) {
+              await page.keyboard.down(modifier);
+            }
           }
           
-          logger?.debug("step:hover:completed", { index: i });
+          await page.keyboard.press(keyPressStep.key);
+          
+          if (keyPressStep.modifiers && keyPressStep.modifiers.length > 0) {
+            for (const modifier of keyPressStep.modifiers.reverse()) {
+              await page.keyboard.up(modifier);
+            }
+          }
+          
+          logger?.debug("step:keypress:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "evaluate": {
+          const evaluateStep = step as any;
+          logger?.debug("step:evaluate", { index: i, script: evaluateStep.script?.substring(0, 100) });
+          
+          await page.evaluate(evaluateStep.script);
+          
+          logger?.debug("step:evaluate:completed", { index: i });
           stepsExecuted++;
           break;
         }
@@ -1243,13 +1493,11 @@ async function executeSteps(
           logger?.debug("step:upload", { index: i, selector: uploadStep.selector });
           
           const elementHandle = await page.$(uploadStep.selector);
-          if (!elementHandle) {
-            throw new Error(`Element not found: ${uploadStep.selector}`);
+          if (elementHandle) {
+            await (elementHandle as any).uploadFile(...uploadStep.filePaths);
           }
           
-          await (elementHandle as any).uploadFile(...uploadStep.filePaths);
-          
-          logger?.debug("step:upload:completed", { index: i, filesCount: uploadStep.filePaths.length });
+          logger?.debug("step:upload:completed", { index: i });
           stepsExecuted++;
           break;
         }
@@ -1257,11 +1505,12 @@ async function executeSteps(
         case "submit": {
           const submitStep = step as any;
           logger?.debug("step:submit", { index: i, selector: submitStep.selector });
+          
           await page.waitForSelector(submitStep.selector, { timeout: 5000 });
           
           if (submitStep.waitForNavigation !== false) {
             await Promise.all([
-              page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
+              page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
               page.evaluate((selector: string) => {
                 const element = document.querySelector(selector);
                 if (element instanceof HTMLFormElement) {
@@ -1287,78 +1536,228 @@ async function executeSteps(
           break;
         }
 
-        case "keypress": {
-          const keypressStep = step as any;
-          logger?.debug("step:keypress", { index: i, key: keypressStep.key });
+        case "type": {
+          const typeStep = step as any;
+          logger?.debug("step:type", { index: i, target: typeStep.target });
           
-          if (keypressStep.selector) {
-            await page.click(keypressStep.selector);
-          }
+          await page.waitForSelector(typeStep.target, { timeout: 5000 });
+          await page.click(typeStep.target);
           
-          if (keypressStep.modifiers && keypressStep.modifiers.length > 0) {
-            for (const modifier of keypressStep.modifiers) {
-              await page.keyboard.down(modifier);
-            }
-            await page.keyboard.press(keypressStep.key);
-            for (const modifier of keypressStep.modifiers.reverse()) {
-              await page.keyboard.up(modifier);
-            }
+          // Type with optional delay
+          if (typeStep.delay && typeStep.delay > 0) {
+            await page.type(typeStep.target, typeStep.text, { delay: typeStep.delay });
           } else {
-            await page.keyboard.press(keypressStep.key);
+            await page.type(typeStep.target, typeStep.text);
           }
           
-          logger?.debug("step:keypress:completed", { index: i });
-          stepsExecuted++;
-          break;
-        }
-
-        case "focus": {
-          const focusStep = step as any;
-          logger?.debug("step:focus", { index: i, selector: focusStep.selector });
-          await page.focus(focusStep.selector);
-          logger?.debug("step:focus:completed", { index: i });
-          stepsExecuted++;
-          break;
-        }
-
-        case "blur": {
-          const blurStep = step as any;
-          logger?.debug("step:blur", { index: i, selector: blurStep.selector });
-          await page.evaluate((selector: string) => {
-            const element = document.querySelector(selector) as HTMLElement;
-            element?.blur();
-          }, blurStep.selector);
-          logger?.debug("step:blur:completed", { index: i });
-          stepsExecuted++;
-          break;
-        }
-
-        case "clear": {
-          const clearStep = step as any;
-          logger?.debug("step:clear", { index: i, selector: clearStep.selector });
-          await page.click(clearStep.selector, { clickCount: 3 });
-          await page.keyboard.press('Backspace');
-          logger?.debug("step:clear:completed", { index: i });
-          stepsExecuted++;
-          break;
-        }
-
-        case "evaluate": {
-          const evaluateStep = step as any;
-          logger?.debug("step:evaluate", { index: i });
-          
-          let result;
-          if (evaluateStep.selector) {
-            result = await page.evaluate((params: { script: string; selector: string }) => {
-              const element = document.querySelector(params.selector);
-              const func = new Function('element', params.script);
-              return func(element);
-            }, { script: evaluateStep.script, selector: evaluateStep.selector });
-          } else {
-            result = await page.evaluate(evaluateStep.script);
+          if (typeStep.pressEnter) {
+            await page.keyboard.press('Enter');
           }
           
-          logger?.debug("step:evaluate:completed", { index: i, result });
+          logger?.debug("step:type:completed", { index: i });
+          stepsExecuted++;
+          break;
+        }
+
+        case "fill":
+        case "fillForm": {
+          const fillStep = step as any;
+          
+          // Handle new FillStep with single field
+          if (fillStep.target && fillStep.value !== undefined) {
+            logger?.debug("step:fill:single", { index: i, target: fillStep.target });
+            
+            await page.waitForSelector(fillStep.target, { timeout: 5000 });
+            
+            // Determine field type
+            const fieldType = await page.evaluate((selector: string) => {
+              const el = document.querySelector(selector) as HTMLElement;
+              if (!el) return null;
+              
+              if (el instanceof HTMLSelectElement) return 'select';
+              if (el instanceof HTMLInputElement) {
+                if (el.type === 'checkbox') return 'checkbox';
+                if (el.type === 'radio') return 'radio';
+                return 'text';
+              }
+              if (el instanceof HTMLTextAreaElement) return 'textarea';
+              return 'text';
+            }, fillStep.target);
+            
+            // Fill based on type
+            switch (fieldType) {
+              case 'checkbox':
+                const shouldCheck = fillStep.value === 'true';
+                await page.evaluate((selector: string, check: boolean) => {
+                  const el = document.querySelector(selector) as HTMLInputElement;
+                  if (el && el.checked !== check) el.click();
+                }, fillStep.target, shouldCheck);
+                break;
+                
+              case 'select':
+                await page.select(fillStep.target, fillStep.value);
+                break;
+                
+              default:
+                if (fillStep.clear !== false) {
+                  await page.click(fillStep.target, { clickCount: 3 });
+                  await page.keyboard.press('Backspace');
+                }
+                await page.type(fillStep.target, fillStep.value);
+            }
+            
+            if (fillStep.submit) {
+              await page.keyboard.press('Enter');
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+          // Handle new FillStep with multiple fields
+          else if (fillStep.fields && fillStep.fields.length > 0) {
+            logger?.debug("step:fill:multiple", { index: i, fields: fillStep.fields.length });
+            
+            for (const field of fillStep.fields) {
+              await page.waitForSelector(field.target, { timeout: 5000 });
+              // ... (similar field type handling)
+            }
+            
+            if (fillStep.submit) {
+              await page.keyboard.press('Enter');
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+          // Handle legacy FillFormStep
+          else if ('fields' in fillStep && fillStep.fields) {
+            const fillFormStep = fillStep as FillFormStep;
+            logger?.debug("step:fillForm", { index: i, fields: fillFormStep.fields.length });
+            
+            // Process each field
+            for (const field of fillFormStep.fields) {
+              await page.waitForSelector(field.selector, { timeout: 5000 });
+              
+              // Determine field type
+              const fieldType = await page.evaluate((selector: string) => {
+                const el = document.querySelector(selector) as HTMLElement;
+                if (!el) return null;
+                
+                if (el instanceof HTMLSelectElement) return 'select';
+                if (el instanceof HTMLInputElement) {
+                  if (el.type === 'checkbox') return 'checkbox';
+                  if (el.type === 'radio') return 'radio';
+                  return 'text';
+                }
+                if (el instanceof HTMLTextAreaElement) return 'textarea';
+                return 'text';
+              }, field.selector);
+              
+              // Handle field based on type
+              switch (fieldType as string) {
+                case "select": {
+                  if (field.matchByText) {
+                    await page.evaluate((params: { selector: string; text: string }) => {
+                      const select = document.querySelector(params.selector) as HTMLSelectElement;
+                      if (!select) return;
+                      for (let i = 0; i < select.options.length; i++) {
+                        if (select.options[i].text === params.text) {
+                          select.selectedIndex = i;
+                          select.dispatchEvent(new Event('change', { bubbles: true }));
+                          break;
+                        }
+                      }
+                    }, { selector: field.selector, text: field.value });
+                  } else {
+                    await page.select(field.selector, field.value);
+                  }
+                  break;
+                }
+                case "checkbox": {
+                  const shouldBeChecked = field.value.toLowerCase() === "true";
+                  const isChecked = await page.evaluate((selector: string) => {
+                    const checkbox = document.querySelector(selector) as HTMLInputElement;
+                    return checkbox?.checked || false;
+                  }, field.selector);
+                  if (isChecked !== shouldBeChecked) {
+                    await page.click(field.selector);
+                  }
+                  break;
+                }
+                case "radio": {
+                  // For radio, click the one with matching value
+                  const radioSelector = `${field.selector}[value="${field.value}"]`;
+                  await page.waitForSelector(radioSelector, { timeout: 5000 }).catch(() => {
+                    // If specific value selector fails, just click the base selector
+                  });
+                  const selectorToClick = await page.$(radioSelector) ? radioSelector : field.selector;
+                  await page.click(selectorToClick);
+                  break;
+                }
+                case "file": {
+                  const elementHandle = await page.$(field.selector);
+                  if (elementHandle) {
+                    await (elementHandle as any).uploadFile(field.value);
+                  }
+                  break;
+                }
+                default: {
+                  // Text-like inputs (text, password, email, number, tel, url, date, textarea)
+                  await page.click(field.selector, { clickCount: 3 });
+                  await page.keyboard.press('Backspace');
+                  await page.type(field.selector, field.value, { delay: field.delay || 0 });
+                  break;
+                }
+              }
+              
+            }
+            
+            // Submit form if requested
+            if (fillFormStep.submit) {
+              logger?.debug("step:fillForm:submit", { index: i });
+              const submitSelector = fillFormStep.submitSelector 
+                || (fillFormStep.formSelector ? `${fillFormStep.formSelector} [type="submit"], ${fillFormStep.formSelector} button[type="submit"], ${fillFormStep.formSelector} input[type="submit"]` : '[type="submit"]');
+              
+              const waitForNav = fillFormStep.waitForNavigation !== false;
+              
+              if (waitForNav) {
+                await Promise.all([
+                  page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {
+                    // Navigation might not always happen
+                  }),
+                  page.evaluate((params: { formSelector?: string; submitSelector: string }) => {
+                    // Try submit button first
+                    const submitBtn = document.querySelector(params.submitSelector);
+                    if (submitBtn instanceof HTMLElement) {
+                      submitBtn.click();
+                      return;
+                    }
+                    // Fall back to form.submit()
+                    if (params.formSelector) {
+                      const form = document.querySelector(params.formSelector);
+                      if (form instanceof HTMLFormElement) {
+                        form.submit();
+                      }
+                    }
+                  }, { formSelector: fillFormStep.formSelector, submitSelector })
+                ]);
+              } else {
+                await page.evaluate((params: { formSelector?: string; submitSelector: string }) => {
+                  const submitBtn = document.querySelector(params.submitSelector);
+                  if (submitBtn instanceof HTMLElement) {
+                    submitBtn.click();
+                    return;
+                  }
+                  if (params.formSelector) {
+                    const form = document.querySelector(params.formSelector);
+                    if (form instanceof HTMLFormElement) {
+                      form.submit();
+                    }
+                  }
+                }, { formSelector: fillFormStep.formSelector, submitSelector });
+              }
+              logger?.debug("step:fillForm:submit:completed", { index: i });
+            }
+            
+            logger?.debug("step:fillForm:completed", { index: i, fieldsProcessed: fillFormStep.fields.length });
+          }
+          
           stepsExecuted++;
           break;
         }

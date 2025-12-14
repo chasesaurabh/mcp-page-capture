@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z } from "zod";
-import type { ActionStep, ViewportStep, FullPageStep, CookieActionStep } from "../../src/types/screenshot.js";
+import type { ActionStep, ViewportStep, FullPageStep, CookieActionStep, FillFormStep, FormFieldInput, QuickFillStep, ClickStep, ScrollStep, WaitForSelectorStep, ScreenshotStep } from "../../src/types/screenshot.js";
 
 describe("captureScreenshot consolidation", () => {
   describe("Legacy parameter conversion", () => {
@@ -167,7 +167,7 @@ describe("captureScreenshot consolidation", () => {
       // Expected: should create delay -> click -> delay steps
       const expectedSteps: ActionStep[] = [
         { type: "delay", duration: 500 },
-        { type: "click", selector: ".btn-menu", button: "left" },
+        { type: "click", target: ".btn-menu", button: "left" },
         { type: "delay", duration: 1000 },
       ];
 
@@ -188,7 +188,7 @@ describe("captureScreenshot consolidation", () => {
       };
 
       // Expected: scroll should be converted to a scroll step
-      const expectedScrollStep: ActionStep = {
+      const expectedScrollStep: ScrollStep = {
         type: "scroll",
         x: 0,
         y: 500,
@@ -204,8 +204,8 @@ describe("captureScreenshot consolidation", () => {
       const steps: ActionStep[] = [
         { type: "viewport", width: 1920, height: 1080 },
         { type: "cookie", action: "set", name: "auth", value: "token123" },
-        { type: "click", selector: ".button" },
-        { type: "cookie", action: "get", name: "auth" },
+        { type: "click", target: ".button" },
+        { type: "cookie", action: "delete", name: "old-cookie" },
         { type: "screenshot" },
       ];
 
@@ -302,7 +302,7 @@ describe("captureScreenshot consolidation", () => {
           { type: "viewport" as const, width: 1920, height: 1080 },
           { type: "cookie" as const, action: "set" as const, name: "session", value: "abc" },
           { type: "fullPage" as const, enabled: true },
-          { type: "click" as const, selector: ".btn" },
+          { type: "click" as const, target: ".btn" },
           { type: "scroll" as const, y: 500 },
           { type: "screenshot" as const },
         ],
@@ -321,7 +321,7 @@ describe("captureScreenshot consolidation", () => {
         viewport: { width: 1920, height: 1080 }, // Legacy parameter
         steps: [
           { type: "fullPage" as const, enabled: true }, // fullPage now as step
-          { type: "click" as const, selector: ".btn" },
+          { type: "click" as const, target: ".btn" },
           { type: "screenshot" as const },
         ],
       };
@@ -336,7 +336,7 @@ describe("captureScreenshot consolidation", () => {
     it("should auto-add screenshot step if none exists", () => {
       const stepsWithoutScreenshot: ActionStep[] = [
         { type: "viewport", width: 1920 },
-        { type: "click", selector: ".btn" },
+        { type: "click", target: ".btn" },
       ];
 
       // Simulating the logic in runScreenshot
@@ -350,24 +350,23 @@ describe("captureScreenshot consolidation", () => {
     });
 
     it("should respect fullPage setting in screenshot step", () => {
-      const screenshotStep: ActionStep = {
+      const screenshotStep: ScreenshotStep = {
         type: "screenshot",
         fullPage: true,
-        selector: undefined,
       };
 
       expect(screenshotStep.type).toBe("screenshot");
-      expect((screenshotStep as any).fullPage).toBe(true);
+      expect(screenshotStep.fullPage).toBe(true);
     });
 
-    it("should allow element-specific screenshots with selector", () => {
-      const screenshotStep: ActionStep = {
+    it("should allow element-specific screenshots with captureElement", () => {
+      const screenshotStep: ScreenshotStep = {
         type: "screenshot",
-        selector: ".main-content",
+        captureElement: ".main-content",
       };
 
       expect(screenshotStep.type).toBe("screenshot");
-      expect((screenshotStep as any).selector).toBe(".main-content");
+      expect(screenshotStep.captureElement).toBe(".main-content");
     });
   });
 
@@ -377,12 +376,12 @@ describe("captureScreenshot consolidation", () => {
         { type: "viewport", preset: "desktop-hd" },
         { type: "cookie", action: "set", name: "consent", value: "accepted" },
         { type: "fullPage", enabled: false },
-        { type: "click", selector: "#accept-cookies" },
+        { type: "click", target: "#accept-cookies" },
         { type: "delay", duration: 1000 },
         { type: "scroll", y: 500 },
         { type: "screenshot" },
-        { type: "click", selector: ".expand-section" },
-        { type: "waitForSelector", selector: ".expanded-content" },
+        { type: "click", target: ".expand-section" },
+        { type: "waitForSelector", awaitElement: ".expanded-content" },
         { type: "fullPage", enabled: true },
         { type: "screenshot" },
       ];
@@ -399,6 +398,217 @@ describe("captureScreenshot consolidation", () => {
       expect(fullPageSteps).toHaveLength(2);
       expect((fullPageSteps[0] as FullPageStep).enabled).toBe(false);
       expect((fullPageSteps[1] as FullPageStep).enabled).toBe(true);
+    });
+  });
+
+  describe("FillForm step", () => {
+    it("should validate fillForm step schema", () => {
+      const formFieldSchema = z.object({
+        selector: z.string().min(1),
+        value: z.string(),
+        type: z.enum(["text", "select", "checkbox", "radio", "textarea", "password", "email", "number", "tel", "url", "date", "file"]).optional(),
+        matchByText: z.boolean().optional(),
+        delay: z.number().min(0).max(1000).optional(),
+      });
+
+      const fillFormStepSchema = z.object({
+        type: z.literal("fillForm"),
+        fields: z.array(formFieldSchema).min(1),
+        formSelector: z.string().optional(),
+        submit: z.boolean().optional(),
+        submitSelector: z.string().optional(),
+        waitForNavigation: z.boolean().optional(),
+      });
+
+      const validStep = {
+        type: "fillForm" as const,
+        fields: [
+          { selector: "#email", value: "test@example.com" },
+          { selector: "#password", value: "secret123" },
+        ],
+        submit: true,
+      };
+
+      expect(() => fillFormStepSchema.parse(validStep)).not.toThrow();
+
+      const invalidStep = {
+        type: "fillForm" as const,
+        fields: [], // Invalid: empty fields array
+      };
+
+      expect(() => fillFormStepSchema.parse(invalidStep)).toThrow();
+    });
+
+    it("should create valid fillForm step with multiple field types", () => {
+      const fillFormStep: FillFormStep = {
+        type: "fillForm",
+        fields: [
+          { selector: "#username", value: "john_doe" },
+          { selector: "#email", value: "john@example.com", type: "email" },
+          { selector: "#password", value: "SecurePass123!", type: "password" },
+          { selector: "#country", value: "us", type: "select" },
+          { selector: "#newsletter", value: "true", type: "checkbox" },
+          { selector: "input[name='plan']", value: "premium", type: "radio" },
+        ],
+        formSelector: "#registration-form",
+        submit: true,
+        submitSelector: "#submit-btn",
+        waitForNavigation: true,
+      };
+
+      expect(fillFormStep.type).toBe("fillForm");
+      expect(fillFormStep.fields).toHaveLength(6);
+      expect(fillFormStep.submit).toBe(true);
+      expect(fillFormStep.formSelector).toBe("#registration-form");
+    });
+
+    it("should handle fillForm step with minimal configuration", () => {
+      const minimalFillForm: FillFormStep = {
+        type: "fillForm",
+        fields: [
+          { selector: "#search", value: "test query" },
+        ],
+      };
+
+      expect(minimalFillForm.type).toBe("fillForm");
+      expect(minimalFillForm.fields).toHaveLength(1);
+      expect(minimalFillForm.submit).toBeUndefined();
+      expect(minimalFillForm.formSelector).toBeUndefined();
+    });
+
+    it("should support matchByText for select fields", () => {
+      const fillFormStep: FillFormStep = {
+        type: "fillForm",
+        fields: [
+          { selector: "#country", value: "United States", type: "select", matchByText: true },
+        ],
+      };
+
+      expect(fillFormStep.fields[0].matchByText).toBe(true);
+    });
+
+    it("should support delay for text fields", () => {
+      const fillFormStep: FillFormStep = {
+        type: "fillForm",
+        fields: [
+          { selector: "#search", value: "slow typing", delay: 100 },
+        ],
+      };
+
+      expect(fillFormStep.fields[0].delay).toBe(100);
+    });
+
+    it("should include fillForm in complex step sequences", () => {
+      const loginFlow: ActionStep[] = [
+        { type: "viewport", preset: "desktop-hd" },
+        { 
+          type: "fillForm", 
+          fields: [
+            { selector: "#email", value: "user@example.com" },
+            { selector: "#password", value: "password123" },
+          ],
+          submit: true,
+        },
+        { type: "waitForSelector", awaitElement: ".dashboard" },
+        { type: "screenshot" },
+      ];
+
+      expect(loginFlow).toHaveLength(4);
+      expect(loginFlow[1].type).toBe("fillForm");
+      
+      const fillStep = loginFlow[1] as FillFormStep;
+      expect(fillStep.fields).toHaveLength(2);
+      expect(fillStep.submit).toBe(true);
+    });
+
+    it("should handle checkbox values as strings", () => {
+      const fillFormStep: FillFormStep = {
+        type: "fillForm",
+        fields: [
+          { selector: "#terms", value: "true", type: "checkbox" },
+          { selector: "#marketing", value: "false", type: "checkbox" },
+        ],
+      };
+
+      expect(fillFormStep.fields[0].value).toBe("true");
+      expect(fillFormStep.fields[1].value).toBe("false");
+    });
+
+    it("should handle file upload field type", () => {
+      const fillFormStep: FillFormStep = {
+        type: "fillForm",
+        fields: [
+          { selector: "#avatar", value: "/path/to/image.jpg", type: "file" },
+        ],
+      };
+
+      expect(fillFormStep.fields[0].type).toBe("file");
+    });
+  });
+
+  describe("QuickFillStep", () => {
+    it("should validate quickFill step schema", () => {
+      const quickFillStep: QuickFillStep = {
+        type: "quickFill",
+        target: "#search",
+        value: "test query",
+        submit: true,
+      };
+
+      expect(quickFillStep.type).toBe("quickFill");
+      expect(quickFillStep.target).toBe("#search");
+      expect(quickFillStep.value).toBe("test query");
+      expect(quickFillStep.submit).toBe(true);
+    });
+
+    it("should allow quickFill without submit", () => {
+      const quickFillStep: QuickFillStep = {
+        type: "quickFill",
+        target: "#input",
+        value: "some text",
+      };
+
+      expect(quickFillStep.type).toBe("quickFill");
+      expect(quickFillStep.submit).toBeUndefined();
+    });
+
+    it("should include quickFill in step sequences", () => {
+      const searchFlow: ActionStep[] = [
+        { type: "quickFill", target: "#search", value: "MCP protocol", submit: true },
+        { type: "waitForSelector", awaitElement: ".results" },
+        { type: "screenshot" },
+      ];
+
+      expect(searchFlow).toHaveLength(3);
+      expect(searchFlow[0].type).toBe("quickFill");
+      expect((searchFlow[0] as QuickFillStep).target).toBe("#search");
+    });
+  });
+
+  describe("Form field input types", () => {
+    it("should support all field types", () => {
+      const allTypes: FormFieldInput["type"][] = [
+        "text", "select", "checkbox", "radio", "textarea", 
+        "password", "email", "number", "tel", "url", "date", "file"
+      ];
+
+      allTypes.forEach(fieldType => {
+        const field: FormFieldInput = {
+          selector: "#test",
+          value: "test value",
+          type: fieldType,
+        };
+        expect(field.type).toBe(fieldType);
+      });
+    });
+
+    it("should allow field type to be undefined for auto-detection", () => {
+      const field: FormFieldInput = {
+        selector: "#email",
+        value: "test@example.com",
+      };
+
+      expect(field.type).toBeUndefined();
     });
   });
 });

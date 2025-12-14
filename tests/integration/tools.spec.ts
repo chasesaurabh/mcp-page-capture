@@ -500,7 +500,7 @@ describe("captureScreenshot tool", () => {
       const response = await handler({
         url: "https://example.com/click",
           steps: [
-          { type: "click", selector: ".btn" },
+          { type: "click", target: ".btn" },
           { type: "screenshot" },
         ],
       });
@@ -563,7 +563,7 @@ describe("captureScreenshot tool", () => {
       const response = await handler({
         url: "https://example.com/scroll-selector",
           steps: [
-          { type: "scroll", selector: "#section" },
+          { type: "scroll", scrollTo: "#section" },
           { type: "screenshot" },
         ],
       });
@@ -592,7 +592,7 @@ describe("captureScreenshot tool", () => {
       const response = await handler({
         url: "https://example.com/wait",
           steps: [
-          { type: "waitForSelector", selector: ".loaded" },
+          { type: "waitForSelector", awaitElement: ".loaded" },
           { type: "screenshot" },
         ],
       });
@@ -624,8 +624,8 @@ describe("captureScreenshot tool", () => {
         url: "https://example.com/multi",
           steps: [
           { type: "delay", duration: 50 },
-          { type: "click", selector: ".open-btn" },
-          { type: "waitForSelector", selector: ".modal" },
+          { type: "click", target: ".open-btn" },
+          { type: "waitForSelector", awaitElement: ".modal" },
           { type: "scroll", y: 500 },
           { type: "screenshot" },
           { type: "delay", duration: 50 },
@@ -658,7 +658,7 @@ describe("captureScreenshot tool", () => {
         url: "https://example.com/auto",
           steps: [
           { type: "delay", duration: 50 },
-          { type: "click", selector: ".btn" },
+          { type: "click", target: ".btn" },
         ],
       });
 
@@ -686,7 +686,7 @@ describe("captureScreenshot tool", () => {
       const response = await handler({
         url: "https://example.com/dblclick",
           steps: [
-          { type: "click", selector: ".item", button: "left", clickCount: 2 },
+          { type: "click", target: ".item", button: "left", clickCount: 2 },
           { type: "screenshot" },
         ],
       });
@@ -718,8 +718,8 @@ describe("captureScreenshot tool", () => {
       const response = await handler({
         url: "https://example.com/partial",
           steps: [
-          { type: "click", selector: ".nonexistent" },
-          { type: "click", selector: ".existing" },
+          { type: "click", target: ".nonexistent" },
+          { type: "click", target: ".existing" },
           { type: "screenshot" },
         ],
       });
@@ -750,9 +750,9 @@ describe("captureScreenshot tool", () => {
       const response = await handler({
         url: "https://example.com/mid-screenshot",
           steps: [
-          { type: "click", selector: ".before-btn" },
+          { type: "click", target: ".before-btn" },
           { type: "screenshot" },
-          { type: "click", selector: ".after-btn" },
+          { type: "click", target: ".after-btn" },
         ],
       });
 
@@ -812,7 +812,7 @@ describe("captureScreenshot tool", () => {
       const response = await handler({
         url: "https://example.com/element-screenshot",
           steps: [
-          { type: "screenshot", selector: ".target-element" },
+          { type: "screenshot", captureElement: ".target-element" },
         ],
       });
 
@@ -843,7 +843,7 @@ describe("captureScreenshot tool", () => {
       const response = await handler({
         url: "https://example.com/fallback-screenshot",
           steps: [
-          { type: "screenshot", selector: ".nonexistent-element" },
+          { type: "screenshot", captureElement: ".nonexistent-element" },
         ],
       });
 
@@ -1135,264 +1135,6 @@ describe("captureScreenshot tool", () => {
       expect(mockBrowser.close).toHaveBeenCalledTimes(1);
     });
 
-    it("executes cookie get step", async () => {
-      const logger = createLogger();
-      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
-
-      // Set up cookies to return the cookie to get
-      setCookiesImpl(async () => [
-        { name: "session", value: "abc123", domain: "example.com" },
-        { name: "user", value: "john", domain: "example.com" },
-      ]);
-
-      queueEvaluateResult({
-        viewportWidth: 1280,
-        viewportHeight: 720,
-        scrollWidth: 1280,
-        scrollHeight: 1000,
-        scrollX: 0,
-        scrollY: 0,
-      });
-
-      const imageBuffer = Buffer.from("cookie-get-image");
-      setScreenshotBuffer(imageBuffer);
-
-      const response = await handler({
-        url: "https://example.com/cookie-get",
-          steps: [
-          { type: "cookie", action: "get", name: "session" },
-          { type: "screenshot" },
-        ],
-      });
-
-      expect(mockPage.cookies).toHaveBeenCalled();
-      expect(logger.info).toHaveBeenCalledWith("step:cookie:get", expect.objectContaining({
-        name: "session",
-        value: "abc123",
-      }));
-      expect(response.content[0].text).toContain("Steps executed: 2");
-      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
-    });
-
-    it("handles cookie get when cookie not found", async () => {
-      const logger = createLogger();
-      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
-
-      // Set up cookies to return empty array
-      setCookiesImpl(async () => []);
-
-      queueEvaluateResult({
-        viewportWidth: 1280,
-        viewportHeight: 720,
-        scrollWidth: 1280,
-        scrollHeight: 1000,
-        scrollX: 0,
-        scrollY: 0,
-      });
-
-      const imageBuffer = Buffer.from("cookie-get-not-found-image");
-      setScreenshotBuffer(imageBuffer);
-
-      const response = await handler({
-        url: "https://example.com/cookie-get-not-found",
-          steps: [
-          { type: "cookie", action: "get", name: "nonexistent" },
-          { type: "screenshot" },
-        ],
-      });
-
-      expect(mockPage.cookies).toHaveBeenCalled();
-      expect(logger.warn).toHaveBeenCalledWith("step:cookie:get:not_found", expect.objectContaining({
-        name: "nonexistent",
-      }));
-      expect(response.content[0].text).toContain("Steps executed: 2");
-      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
-    });
-
-    it("executes cookie list step", async () => {
-      const logger = createLogger();
-      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
-
-      // Set up cookies to return
-      setCookiesImpl(async () => [
-        { name: "session", value: "abc123", domain: "example.com" },
-        { name: "user", value: "john", domain: "example.com" },
-        { name: "preference", value: "dark", domain: "example.com" },
-      ]);
-
-      queueEvaluateResult({
-        viewportWidth: 1280,
-        viewportHeight: 720,
-        scrollWidth: 1280,
-        scrollHeight: 1000,
-        scrollX: 0,
-        scrollY: 0,
-      });
-
-      const imageBuffer = Buffer.from("cookie-list-image");
-      setScreenshotBuffer(imageBuffer);
-
-      const response = await handler({
-        url: "https://example.com/cookie-list",
-          steps: [
-          { type: "cookie", action: "list" },
-          { type: "screenshot" },
-        ],
-      });
-
-      expect(mockPage.cookies).toHaveBeenCalled();
-      expect(logger.info).toHaveBeenCalledWith("step:cookie:list", expect.objectContaining({
-        count: 3,
-        cookies: ["session", "user", "preference"],
-      }));
-      expect(response.content[0].text).toContain("Steps executed: 2");
-      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
-    });
-
-    it("executes storage get step", async () => {
-      const logger = createLogger();
-      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
-
-      // Queue evaluate results: storage get operation returns value, then metrics
-      queueEvaluateResult("john");
-      queueEvaluateResult({
-        viewportWidth: 1280,
-        viewportHeight: 720,
-        scrollWidth: 1280,
-        scrollHeight: 1000,
-        scrollX: 0,
-        scrollY: 0,
-      });
-
-      const imageBuffer = Buffer.from("storage-get-image");
-      setScreenshotBuffer(imageBuffer);
-
-      const response = await handler({
-        url: "https://example.com/storage-get",
-          steps: [
-          { type: "storage", storageType: "localStorage", action: "get", key: "user" },
-          { type: "screenshot" },
-        ],
-      });
-
-      expect(mockPage.evaluate).toHaveBeenCalled();
-      expect(logger.info).toHaveBeenCalledWith("step:storage:get", expect.objectContaining({
-        storageType: "localStorage",
-        key: "user",
-        value: "john",
-      }));
-      expect(response.content[0].text).toContain("Steps executed: 2");
-      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
-    });
-
-    it("executes storage get step with null result", async () => {
-      const logger = createLogger();
-      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
-
-      // Queue evaluate results: storage get operation returns null, then metrics
-      queueEvaluateResult(null);
-      queueEvaluateResult({
-        viewportWidth: 1280,
-        viewportHeight: 720,
-        scrollWidth: 1280,
-        scrollHeight: 1000,
-        scrollX: 0,
-        scrollY: 0,
-      });
-
-      const imageBuffer = Buffer.from("storage-get-null-image");
-      setScreenshotBuffer(imageBuffer);
-
-      const response = await handler({
-        url: "https://example.com/storage-get-null",
-          steps: [
-          { type: "storage", storageType: "sessionStorage", action: "get", key: "nonexistent" },
-          { type: "screenshot" },
-        ],
-      });
-
-      expect(mockPage.evaluate).toHaveBeenCalled();
-      expect(logger.info).toHaveBeenCalledWith("step:storage:get", expect.objectContaining({
-        storageType: "sessionStorage",
-        key: "nonexistent",
-        value: null,
-      }));
-      expect(response.content[0].text).toContain("Steps executed: 2");
-      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
-    });
-
-    it("executes storage list step", async () => {
-      const logger = createLogger();
-      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
-
-      // Queue evaluate results: storage list operation returns keys, then metrics
-      queueEvaluateResult(["user", "token", "preferences"]);
-      queueEvaluateResult({
-        viewportWidth: 1280,
-        viewportHeight: 720,
-        scrollWidth: 1280,
-        scrollHeight: 1000,
-        scrollX: 0,
-        scrollY: 0,
-      });
-
-      const imageBuffer = Buffer.from("storage-list-image");
-      setScreenshotBuffer(imageBuffer);
-
-      const response = await handler({
-        url: "https://example.com/storage-list",
-          steps: [
-          { type: "storage", storageType: "localStorage", action: "list" },
-          { type: "screenshot" },
-        ],
-      });
-
-      expect(mockPage.evaluate).toHaveBeenCalled();
-      expect(logger.info).toHaveBeenCalledWith("step:storage:list", expect.objectContaining({
-        storageType: "localStorage",
-        count: 3,
-        keys: ["user", "token", "preferences"],
-      }));
-      expect(response.content[0].text).toContain("Steps executed: 2");
-      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
-    });
-
-    it("executes storage list step with empty storage", async () => {
-      const logger = createLogger();
-      const handler = getToolHandler(registerCaptureScreenshotTool, logger);
-
-      // Queue evaluate results: storage list operation returns empty array, then metrics
-      queueEvaluateResult([]);
-      queueEvaluateResult({
-        viewportWidth: 1280,
-        viewportHeight: 720,
-        scrollWidth: 1280,
-        scrollHeight: 1000,
-        scrollX: 0,
-        scrollY: 0,
-      });
-
-      const imageBuffer = Buffer.from("storage-list-empty-image");
-      setScreenshotBuffer(imageBuffer);
-
-      const response = await handler({
-        url: "https://example.com/storage-list-empty",
-          steps: [
-          { type: "storage", storageType: "sessionStorage", action: "list" },
-          { type: "screenshot" },
-        ],
-      });
-
-      expect(mockPage.evaluate).toHaveBeenCalled();
-      expect(logger.info).toHaveBeenCalledWith("step:storage:list", expect.objectContaining({
-        storageType: "sessionStorage",
-        count: 0,
-        keys: [],
-      }));
-      expect(response.content[0].text).toContain("Steps executed: 2");
-      expect(mockBrowser.close).toHaveBeenCalledTimes(1);
-    });
-
     it("executes complex workflow with all new step types", async () => {
       const logger = createLogger();
       const handler = getToolHandler(registerCaptureScreenshotTool, logger);
@@ -1424,7 +1166,7 @@ describe("captureScreenshot tool", () => {
           { type: "cookie", action: "delete", name: "old-cookie" },
           { type: "storage", storageType: "localStorage", action: "set", key: "user", value: "john" },
           { type: "storage", storageType: "sessionStorage", action: "clear" },
-          { type: "click", selector: ".login-btn" },
+          { type: "click", target: ".login-btn" },
           { type: "delay", duration: 50 },
           { type: "screenshot", fullPage: true },
         ],
@@ -2007,7 +1749,7 @@ describe("extractDom tool", () => {
         code: ErrorCode.InvalidParams,
         data: {
           detail: "No element matched selector",
-          url: "https://example.org",
+          url: "https://example.org/", // URL normalizer adds trailing slash
         },
       });
       return true;
