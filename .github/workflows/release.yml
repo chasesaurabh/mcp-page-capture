@@ -52,17 +52,22 @@ jobs:
           npx semantic-release 2>&1 | tee release.log
           EXIT_CODE=$?
           set -e
-          if grep -q "Published release" release.log || grep -q "Publishing version" release.log; then
+          # Check for various indicators that a release was published
+          if grep -qE "(Published GitHub release|Created tag|Publishing version|published to npm)" release.log; then
             echo "new_release_published=true" >> $GITHUB_OUTPUT
             echo "new_release_version=$(cat package.json | jq -r .version)" >> $GITHUB_OUTPUT
+            echo "Release published successfully"
+          elif [ $EXIT_CODE -eq 0 ]; then
+            # semantic-release succeeded but no new release (no releasable commits)
+            echo "new_release_published=false" >> $GITHUB_OUTPUT
+            echo "new_release_version=$(cat package.json | jq -r .version)" >> $GITHUB_OUTPUT
+            echo "No new release needed"
           else
             echo "new_release_published=false" >> $GITHUB_OUTPUT
             echo "new_release_version=$(cat package.json | jq -r .version)" >> $GITHUB_OUTPUT
-            if [ $EXIT_CODE -ne 0 ]; then
-              echo "Semantic release failed with exit code $EXIT_CODE"
-              cat release.log
-              exit $EXIT_CODE
-            fi
+            echo "Semantic release failed with exit code $EXIT_CODE"
+            cat release.log
+            exit $EXIT_CODE
           fi
 
   docker:
