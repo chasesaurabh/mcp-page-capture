@@ -1,3 +1,7 @@
+## <small>1.3.1 (2025-12-23)</small>
+
+* fix: improve semantic-release output detection and error handling ([dfab3a5](https://github.com/chasesaurabh/mcp-page-capture/commit/dfab3a5))
+
 ## 1.3.0 (2025-12-23)
 
 * feat: add cookie and storage management steps with enhanced screenshot options ([385812b](https://github.com/chasesaurabh/mcp-page-capture/commit/385812b))
