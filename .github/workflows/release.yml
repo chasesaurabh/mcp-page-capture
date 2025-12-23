@@ -43,14 +43,18 @@ jobs:
 
       - name: Release
         id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          semantic_version: 24
+          branches: main
+          extra_plugins: |
+            @semantic-release/changelog@6
+            @semantic-release/git@10
+            conventional-changelog-conventionalcommits@7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          npx semantic-release --branches main
-          echo "new_release_published=$([[ -f .release ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
-          echo "new_release_version=$(cat package.json | jq -r .version)" >> $GITHUB_OUTPUT
 
   docker:
     name: Build and Publish Docker Image
