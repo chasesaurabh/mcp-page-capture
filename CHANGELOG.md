@@ -1,17 +1,3 @@
-## 1.3.0 (2025-12-23)
-
-* docs: clarify IDE MCP configuration with path resolution note ([ccda1df](https://github.com/chasesaurabh/mcp-page-capture/commit/ccda1df))
-* feat: add cookie and storage management steps with enhanced screenshot options ([385812b](https://github.com/chasesaurabh/mcp-page-capture/commit/385812b))
-* feat: add Docker multi-platform support, advanced viewport presets, retry logic, telemetry, and plug ([3195836](https://github.com/chasesaurabh/mcp-page-capture/commit/3195836))
-* feat: add interactive page automation with steps API and enhanced click actions ([ca783ec](https://github.com/chasesaurabh/mcp-page-capture/commit/ca783ec))
-* feat: add LLM-optimized schema with 6 simplified steps and smart defaults ([b68043c](https://github.com/chasesaurabh/mcp-page-capture/commit/b68043c))
-* feat: add master timeout protection and safe browser cleanup to prevent indefinite hangs ([9f58991](https://github.com/chasesaurabh/mcp-page-capture/commit/9f58991))
-* feat: Added input action steps ([ec6306d](https://github.com/chasesaurabh/mcp-page-capture/commit/ec6306d))
-* feat: consolodated tool actions to remove duplication ([76fa9d5](https://github.com/chasesaurabh/mcp-page-capture/commit/76fa9d5))
-* feat: depricate fullPage parameter ([7e28775](https://github.com/chasesaurabh/mcp-page-capture/commit/7e28775))
-* test: add comprehensive unit tests for logger and request options utilities ([7f88b4c](https://github.com/chasesaurabh/mcp-page-capture/commit/7f88b4c))
-* chore: use package.json version in server creation ([98d77e9](https://github.com/chasesaurabh/mcp-page-capture/commit/98d77e9))
-
 # Changelog
 
 All notable changes to this project will be documented in this file following [Semantic Versioning](https://semver.org/).
