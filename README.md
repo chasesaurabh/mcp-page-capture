@@ -132,7 +132,8 @@ docker run --rm -it mcp-page-capture
 ```
 Otherwise you can keep using the standard npm scripts locally.
 
-## Copilot MCP configuration
+## IDE MCP configuration
+
 ```json
 {
   "mcpServers": {
@@ -143,6 +144,8 @@ Otherwise you can keep using the standard npm scripts locally.
   }
 }
 ```
+
+Note: You may need to use the full path to `dist/cli.js` or `node` depending on your working directory and Node.js module resolution configuration.
 
 ## Programmatic usage
 
