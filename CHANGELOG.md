@@ -1,3 +1,7 @@
+## 1.5.0 (2025-12-23)
+
+* feat: fix Docker job trigger with improved release detection ([c290202](https://github.com/chasesaurabh/mcp-page-capture/commit/c290202))
+
 ## 1.4.0 (2025-12-23)
 
 * feat: trigger Docker image build for v1.4.0 ([1fc9864](https://github.com/chasesaurabh/mcp-page-capture/commit/1fc9864))
