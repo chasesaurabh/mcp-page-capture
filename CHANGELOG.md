@@ -1,3 +1,7 @@
+## 1.4.0 (2025-12-23)
+
+* feat: trigger Docker image build for v1.4.0 ([1fc9864](https://github.com/chasesaurabh/mcp-page-capture/commit/1fc9864))
+
 ## <small>1.3.1 (2025-12-23)</small>
 
 * fix: improve semantic-release output detection and error handling ([dfab3a5](https://github.com/chasesaurabh/mcp-page-capture/commit/dfab3a5))

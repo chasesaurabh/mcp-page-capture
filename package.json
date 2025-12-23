@@ -1,6 +1,6 @@
 {
   "name": "mcp-page-capture",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "mcp-page-capture is a Node.js + TypeScript MCP server that captures webpage screenshots via Puppeteer.",
   "type": "module",
   "main": "dist/server.js",
