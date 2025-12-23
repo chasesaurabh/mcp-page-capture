@@ -48,13 +48,21 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          set +e
           npx semantic-release 2>&1 | tee release.log
-          if grep -q "Published release" release.log; then
+          EXIT_CODE=$?
+          set -e
+          if grep -q "Published release" release.log || grep -q "Publishing version" release.log; then
             echo "new_release_published=true" >> $GITHUB_OUTPUT
             echo "new_release_version=$(cat package.json | jq -r .version)" >> $GITHUB_OUTPUT
           else
             echo "new_release_published=false" >> $GITHUB_OUTPUT
             echo "new_release_version=$(cat package.json | jq -r .version)" >> $GITHUB_OUTPUT
+            if [ $EXIT_CODE -ne 0 ]; then
+              echo "Semantic release failed with exit code $EXIT_CODE"
+              cat release.log
+              exit $EXIT_CODE
+            fi
           fi
 
   docker:
