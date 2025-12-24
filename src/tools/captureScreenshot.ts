@@ -638,8 +638,14 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
       });
 
       const response = await page.goto(args.url, {
-        waitUntil: "networkidle2",
+        // Use domcontentloaded to avoid hanging on long-lived connections (e.g., analytics beacons)
+        waitUntil: "domcontentloaded",
         timeout: CAPTURE_TIMEOUT_MS,
+      });
+
+      // Best-effort short network idle wait (does not block completion if it times out)
+      await page.waitForNetworkIdle({ idleTime: 500, timeout: 5000 }).catch(() => {
+        logger?.debug("navigation:networkidle_skip", { reason: "timeout_or_busy" });
       });
 
       if (!response || !response.ok()) {
@@ -1152,11 +1158,12 @@ async function executeSteps(
         case "wait":
         case "waitForSelector": {
           const waitStep = step as any;
+          const timeout = waitStep.timeout ?? 10000;
           
           // Handle new WaitStep
           if ('for' in waitStep && waitStep.for) {
-            logger?.debug("step:wait:for_element", { index: i, for: waitStep.for });
-            await page.waitForSelector(waitStep.for, { timeout: 10000 });
+            logger?.debug("step:wait:for_element", { index: i, for: waitStep.for, timeout });
+            await page.waitForSelector(waitStep.for, { timeout });
           }
           // Handle duration
           else if ('duration' in waitStep && waitStep.duration !== undefined) {
@@ -1165,7 +1172,6 @@ async function executeSteps(
           }
           // Handle legacy WaitForSelectorStep
           else if ('awaitElement' in waitStep) {
-            const timeout = waitStep.timeout ?? 10000;
             logger?.debug("step:waitForSelector", { index: i, awaitElement: waitStep.awaitElement, timeout });
             await page.waitForSelector(waitStep.awaitElement, { timeout });
           }
