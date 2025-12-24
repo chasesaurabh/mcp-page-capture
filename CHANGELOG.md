@@ -1,3 +1,8 @@
+## <small>1.5.1 (2025-12-24)</small>
+
+* fix: add timeout protection for screenshot operations and fix viewport device parameter ([f3ba91e](https://github.com/chasesaurabh/mcp-page-capture/commit/f3ba91e))
+* fix: improve page load reliability with domcontentloaded and best-effort network idle wait ([0d28307](https://github.com/chasesaurabh/mcp-page-capture/commit/0d28307))
+
 ## 1.5.0 (2025-12-23)
 
 * feat: fix Docker job trigger with improved release detection ([c290202](https://github.com/chasesaurabh/mcp-page-capture/commit/c290202))
