@@ -30,6 +30,8 @@ import {
 const CAPTURE_TIMEOUT_MS = 45_000;
 const BROWSER_CLOSE_TIMEOUT_MS = 5_000;
 const MASTER_TIMEOUT_MS = 60_000;
+const SCREENSHOT_TIMEOUT_MS = 30_000;
+const STEP_TIMEOUT_MS = 15_000;
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 } as const;
 
 // Step execution tracking
@@ -769,13 +771,15 @@ async function runScreenshot(args: CaptureScreenshotInput, logger: Logger): Prom
 function resolveViewport(config?: ViewportConfig, logger?: Logger): ViewportPreset {
   let viewport: ViewportPreset = DEFAULT_VIEWPORT as ViewportPreset;
   
-  if (config?.preset) {
-    const preset = getViewportPreset(config.preset);
+  // Support both 'device' (LLM canonical) and 'preset' (legacy) parameters
+  const deviceName = (config as any)?.device || config?.preset;
+  if (deviceName) {
+    const preset = getViewportPreset(deviceName);
     if (preset) {
       viewport = preset;
-      logger?.debug("viewport:using_preset", { preset: config.preset });
+      logger?.debug("viewport:using_preset", { device: deviceName });
     } else {
-      logger?.warn("viewport:preset_not_found", { preset: config.preset });
+      logger?.warn("viewport:preset_not_found", { device: deviceName });
     }
   }
   
@@ -1190,25 +1194,23 @@ async function executeSteps(
           
           logger?.debug("step:screenshot", { index: i, fullPage: useFullPage, element: elementSelector });
           
-          if (elementSelector) {
-            // Capture specific element
-            const element = await page.$(elementSelector);
-            if (element) {
-              screenshotBuffer = (await element.screenshot({ type: "png" })) as Buffer;
-            } else {
-              logger?.warn("step:screenshot:element_not_found", { index: i, element: elementSelector });
-              // Fall back to page screenshot
-              screenshotBuffer = (await page.screenshot({
-                type: "png",
-                fullPage: useFullPage,
-              })) as Buffer;
+          // Wrap screenshot in timeout to prevent indefinite hangs
+          const takeScreenshot = async (): Promise<Buffer> => {
+            if (elementSelector) {
+              const element = await page.$(elementSelector);
+              if (element) {
+                return (await element.screenshot({ type: "png" })) as Buffer;
+              } else {
+                logger?.warn("step:screenshot:element_not_found", { index: i, element: elementSelector });
+              }
             }
-          } else {
-            screenshotBuffer = (await page.screenshot({
+            return (await page.screenshot({
               type: "png",
               fullPage: useFullPage,
             })) as Buffer;
-          }
+          };
+          
+          screenshotBuffer = await withTimeout(takeScreenshot(), SCREENSHOT_TIMEOUT_MS, "screenshot");
           screenshotsTaken++;
           stepsExecuted++;
           break;
@@ -1785,10 +1787,11 @@ async function executeSteps(
   // If no screenshot step was executed and we're not skipping, take one at the end
   if (!screenshotBuffer && !skipScreenshot) {
     logger?.debug("step:auto_screenshot", { reason: "no screenshot step found" });
-    screenshotBuffer = (await page.screenshot({
-      type: "png",
-      fullPage: fullPageEnabled,
-    })) as Buffer;
+    screenshotBuffer = await withTimeout(
+      page.screenshot({ type: "png", fullPage: fullPageEnabled }) as Promise<Buffer>,
+      SCREENSHOT_TIMEOUT_MS,
+      "auto_screenshot"
+    );
     screenshotsTaken++;
   }
 

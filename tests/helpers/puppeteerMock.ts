@@ -26,8 +26,10 @@ const mockKeyboard = {
   up: vi.fn(async () => undefined),
 };
 
+let currentViewport = { width: 1280, height: 720 };
+
 const mockPage = {
-  setViewport: vi.fn(async () => undefined),
+  setViewport: vi.fn(async (viewport: any) => { currentViewport = viewport; }),
   setDefaultNavigationTimeout: vi.fn(async () => undefined),
   setExtraHTTPHeaders: vi.fn(async () => undefined),
   setCookie: vi.fn(async (..._cookies: any[]) => undefined),
@@ -43,6 +45,7 @@ const mockPage = {
   click: vi.fn(async (selector: string, options?: any) => clickImpl(selector, options)),
   waitForSelector: vi.fn(async (selector: string, options?: any) => waitForSelectorImpl(selector, options)),
   waitForNavigation: vi.fn(async (options?: any) => waitForNavigationImpl(options)),
+  waitForNetworkIdle: vi.fn(async () => undefined),
   setUserAgent: vi.fn(async () => undefined),
   evaluateOnNewDocument: vi.fn(async () => undefined),
   cookies: vi.fn(async () => cookiesImpl()),
@@ -53,6 +56,7 @@ const mockPage = {
   hover: vi.fn(async (selector: string) => hoverImpl(selector)),
   focus: vi.fn(async (selector: string) => focusImpl(selector)),
   keyboard: mockKeyboard,
+  viewport: vi.fn(() => currentViewport),
 };
 
 const mockBrowser = {
@@ -177,6 +181,7 @@ export function resetPuppeteerMock() {
   mockPage.click.mockClear();
   mockPage.waitForSelector.mockClear();
   mockPage.waitForNavigation.mockClear();
+  mockPage.waitForNetworkIdle.mockClear();
   mockPage.setUserAgent.mockClear();
   mockPage.evaluateOnNewDocument.mockClear();
   mockPage.cookies.mockClear();
@@ -186,11 +191,13 @@ export function resetPuppeteerMock() {
   mockPage.select.mockClear();
   mockPage.hover.mockClear();
   mockPage.focus.mockClear();
+  mockPage.viewport.mockClear();
   mockKeyboard.press.mockClear();
   mockKeyboard.down.mockClear();
   mockKeyboard.up.mockClear();
   evaluateQueue.length = 0;
   screenshotBuffer = Buffer.from("mock-image");
+  currentViewport = { width: 1280, height: 720 };
   setGotoSuccess();
   waitForSelectorImpl = async () => ({});
   clickImpl = async () => undefined;
