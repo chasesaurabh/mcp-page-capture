@@ -10,6 +10,10 @@
 
 mcp-page-capture is a Model Context Protocol (MCP) server that orchestrates headless Chromium via Puppeteer to capture pixel-perfect screenshots of arbitrary URLs. It is optimized for Copilot/MCP-enabled environments and can be embedded into automated workflows or run as a standalone developer tool.
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/chasesaurabh-mcp-page-capture).
+
 ## Features
 - 📸 High-fidelity screenshots powered by Puppeteer and headless Chromium
 - ⚙️ **LLM-optimized schema** with minimal parameters exposed and sensible defaults
